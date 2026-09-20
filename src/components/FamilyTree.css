@@ -1,0 +1,49 @@
+.family-tree {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+}
+
+.family-tree__svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.link {
+  fill: none;
+  stroke: #b8c4d0;
+  stroke-width: 2;
+}
+
+.node__card {
+  fill: #ffffff;
+  stroke: #6c8ebf;
+  stroke-width: 1.5;
+}
+
+.node--interactive {
+  cursor: pointer;
+}
+
+.node__name {
+  font: 600 13px system-ui, 'Segoe UI', sans-serif;
+  fill: #1f2933;
+}
+
+.node__meta {
+  font: 11px system-ui, 'Segoe UI', sans-serif;
+  fill: #616e7c;
+}
+
+.node__toggle circle {
+  fill: #6c8ebf;
+}
+
+.node__toggle text {
+  fill: #ffffff;
+  font: 700 12px system-ui, sans-serif;
+  pointer-events: none;
+}
