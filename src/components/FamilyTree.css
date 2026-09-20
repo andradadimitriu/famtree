@@ -24,7 +24,7 @@
   stroke-width: 1.5;
 }
 
-.node--interactive {
+.node__union--interactive {
   cursor: pointer;
 }
 
@@ -36,6 +36,21 @@
 .node__meta {
   font: 11px system-ui, 'Segoe UI', sans-serif;
   fill: #616e7c;
+}
+
+.node__marriage-line {
+  stroke: #6c8ebf;
+  stroke-width: 1.5;
+}
+
+.node__marriage {
+  fill: #f6a5c0;
+  stroke: #6c8ebf;
+  stroke-width: 1.5;
+}
+
+.node__person--spouse .node__card {
+  stroke-dasharray: 4 2;
 }
 
 .node__toggle circle {
