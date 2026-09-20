@@ -1,5 +1,13 @@
 # famtree — Spec
 
+> **Superseded data model.** The nested `marriages`/`children` shape below
+> describes the concept (a marriage as its own node, children belonging to
+> a specific marriage) but the concrete storage shape was later replaced
+> by a normalized `people`/`marriages`/`parentage` store — see
+> [people-and-relationships](../people-and-relationships/spec.md). The
+> **Rendering** and **Layout / spacing** sections below still describe the
+> current UI.
+
 ## Summary
 add marriages to the data
 

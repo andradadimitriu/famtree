@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
-import familyData from '../data/familyData'
+import { people, marriages as marriageData, parentage, rootId } from '../data/familyData'
+import { buildFamilyTree } from '../data/familyGraph'
 import './FamilyTree.css'
 
 const NODE_WIDTH = 190
@@ -38,6 +39,16 @@ function personHalfWidth(marriages) {
 }
 
 const halfWidth = (d) => personHalfWidth(d.data.marriages)
+
+// How many *expanded* ancestor generations sit above a person (0 if
+// collapsed/absent). Ancestor stacks aren't part of the d3.hierarchy
+// layout, so nothing else accounts for the vertical room they need —
+// without this, a deep enough expansion renders above the SVG's
+// viewBox and is invisible rather than merely crowded.
+function ancestorDepth(person) {
+  if (!person.parents) return 0
+  return 1 + Math.max(...person.parents.map(ancestorDepth))
+}
 
 // Collapse state lives per marriage (`marriage.children` vs
 // `marriage._children`, d3's convention), not on the person — so
@@ -78,11 +89,11 @@ function collapseBelowDepth(node, maxDepth, depth = 0) {
   })
 }
 
-function PersonCard({ person, x, isSpouse }) {
+function PersonCard({ person, x, y = 0, isSpouse, isAncestor }) {
   return (
     <g
-      transform={`translate(${x}, 0)`}
-      className={`node__person${isSpouse ? ' node__person--spouse' : ''}`}
+      transform={`translate(${x}, ${y})`}
+      className={`node__person${isSpouse ? ' node__person--spouse' : ''}${isAncestor ? ' node__person--ancestor' : ''}`}
     >
       <rect
         className="node__card"
@@ -104,11 +115,82 @@ function PersonCard({ person, x, isSpouse }) {
   )
 }
 
+// Renders a person's parents as a small pair above their card, joined by
+// the same marriage-dot connector style used for spouses, recursing
+// upward for grandparents-in-law. This is *not* part of the d3.hierarchy
+// layout `FamilyNode` sits in — it's a fixed local offset above whichever
+// card it's attached to, so (per specs/ancestors/spec.md) it can visually
+// overlap a neighboring node in a wide/deep tree. Accepted for now.
+function AncestorStack({ person, x, y, onToggle }) {
+  const hasAncestors = Boolean(person.parents || person._parents)
+  if (!hasAncestors) return null
+
+  const isCollapsed = Boolean(person._parents)
+  const toggleY = y - CARD_HEIGHT / 2 - 14
+
+  return (
+    <g className="node__ancestors">
+      <g
+        className="node__toggle node__toggle--interactive"
+        transform={`translate(${x}, ${toggleY})`}
+        onClick={() => onToggle(person)}
+      >
+        <circle r={9} />
+        <text textAnchor="middle" dy={4}>
+          {isCollapsed ? '+' : '–'}
+        </text>
+      </g>
+      {!isCollapsed &&
+        (() => {
+          const parents = person.parents
+          const parentY = y - NODE_HEIGHT
+          const positions =
+            parents.length === 2 ? [x - STEP / 2, x + STEP / 2] : [x]
+
+          return (
+            <>
+              <line
+                className="node__marriage-line"
+                x1={x}
+                x2={x}
+                y1={parentY}
+                y2={toggleY}
+              />
+              {parents.length === 2 && (
+                <>
+                  <line
+                    className="node__marriage-line"
+                    x1={positions[0] + CARD_WIDTH / 2}
+                    x2={positions[1] - CARD_WIDTH / 2}
+                    y1={parentY}
+                    y2={parentY}
+                  />
+                  <circle className="node__marriage" cx={x} cy={parentY} r={5} />
+                </>
+              )}
+              {parents.map((parent, i) => (
+                <g key={i}>
+                  <PersonCard person={parent} x={positions[i]} y={parentY} isAncestor />
+                  <AncestorStack
+                    person={parent}
+                    x={positions[i]}
+                    y={parentY}
+                    onToggle={onToggle}
+                  />
+                </g>
+              ))}
+            </>
+          )
+        })()}
+    </g>
+  )
+}
+
 // A person and, for each marriage, their spouse — rendered as separate
 // cards joined by a small marriage node. Clicking a marriage's connector
 // expands/collapses only that marriage's children, independent of any
 // other marriage this person has.
-function FamilyNode({ node, onToggleMarriage }) {
+function FamilyNode({ node, onToggleMarriage, onToggleAncestors }) {
   const { data, x, y } = node
   const marriages = data.marriages ?? []
 
@@ -152,15 +234,19 @@ function FamilyNode({ node, onToggleMarriage }) {
         )
       })}
       <PersonCard person={data} x={0} />
+      <AncestorStack person={data} x={0} y={0} onToggle={onToggleAncestors} />
       {marriages.map(
         (marriage, i) =>
           marriage.spouse && (
-            <PersonCard
-              key={i}
-              person={marriage.spouse}
-              x={spouseCenterX(i)}
-              isSpouse
-            />
+            <g key={i}>
+              <PersonCard person={marriage.spouse} x={spouseCenterX(i)} isSpouse />
+              <AncestorStack
+                person={marriage.spouse}
+                x={spouseCenterX(i)}
+                y={0}
+                onToggle={onToggleAncestors}
+              />
+            </g>
           ),
       )}
     </g>
@@ -170,7 +256,7 @@ function FamilyNode({ node, onToggleMarriage }) {
 export default function FamilyTree() {
   const rootDataRef = useRef(null)
   if (!rootDataRef.current) {
-    const data = structuredClone(familyData)
+    const data = buildFamilyTree(people, marriageData, parentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
   }
@@ -191,7 +277,20 @@ export default function FamilyTree() {
     setVersion((v) => v + 1)
   }
 
-  const { nodes, links, width, height, offsetX } = useMemo(() => {
+  const handleToggleAncestors = (person) => {
+    if (person.parents) {
+      person._parents = person.parents
+      person.parents = undefined
+    } else if (person._parents) {
+      person.parents = person._parents
+      person._parents = undefined
+    } else {
+      return
+    }
+    setVersion((v) => v + 1)
+  }
+
+  const { nodes, links, width, height, offsetX, topMargin } = useMemo(() => {
     const root = d3.hierarchy(rootDataRef.current, childrenAccessor)
     d3
       .tree()
@@ -206,12 +305,22 @@ export default function FamilyTree() {
     const maxX = Math.max(...descendants.map((d) => d.x + halfWidth(d)))
     const maxY = Math.max(...descendants.map((d) => d.y))
 
+    const maxAncestorDepth = Math.max(
+      0,
+      ...descendants.flatMap((d) => {
+        const spouses = (d.data.marriages ?? []).map((m) => m.spouse).filter(Boolean)
+        return [d.data, ...spouses].map(ancestorDepth)
+      }),
+    )
+    const topMargin = NODE_HEIGHT / 2 + maxAncestorDepth * NODE_HEIGHT
+
     return {
       nodes: descendants,
       links: root.links(),
       width: maxX - minX,
-      height: maxY + NODE_HEIGHT,
+      height: maxY + NODE_HEIGHT + maxAncestorDepth * NODE_HEIGHT,
       offsetX: -minX,
+      topMargin,
     }
     // `version` is the re-render trigger: toggling a node mutates the plain
     // data object in place, so the hierarchy is rebuilt from scratch here.
@@ -231,7 +340,7 @@ export default function FamilyTree() {
         role="img"
         aria-label="Family tree"
       >
-        <g transform={`translate(${offsetX}, ${NODE_HEIGHT / 2})`}>
+        <g transform={`translate(${offsetX}, ${topMargin})`}>
           {links.map((link) => {
             // A child links to the connector of the specific marriage it
             // came from, not to the person's own card position.
@@ -256,6 +365,7 @@ export default function FamilyTree() {
               key={`${node.x},${node.y},${node.data.name}`}
               node={node}
               onToggleMarriage={handleToggleMarriage}
+              onToggleAncestors={handleToggleAncestors}
             />
           ))}
         </g>

@@ -53,6 +53,15 @@
   stroke-dasharray: 4 2;
 }
 
+.node__person--ancestor .node__card {
+  stroke: #9aa5b1;
+  fill: #f8fafb;
+}
+
+.node__toggle--interactive {
+  cursor: pointer;
+}
+
 .node__toggle circle {
   fill: #6c8ebf;
 }
