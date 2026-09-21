@@ -24,7 +24,7 @@
   stroke-width: 1.5;
 }
 
-.node--interactive {
+.node__union--interactive {
   cursor: pointer;
 }
 
@@ -38,6 +38,30 @@
   fill: #616e7c;
 }
 
+.node__marriage-line {
+  stroke: #6c8ebf;
+  stroke-width: 1.5;
+}
+
+.node__marriage {
+  fill: #f6a5c0;
+  stroke: #6c8ebf;
+  stroke-width: 1.5;
+}
+
+.node__person--spouse .node__card {
+  stroke-dasharray: 4 2;
+}
+
+.node__person--ancestor .node__card {
+  stroke: #9aa5b1;
+  fill: #f8fafb;
+}
+
+.node__toggle--interactive {
+  cursor: pointer;
+}
+
 .node__toggle circle {
   fill: #6c8ebf;
 }
@@ -46,4 +70,8 @@
   fill: #ffffff;
   font: 700 12px system-ui, sans-serif;
   pointer-events: none;
+}
+
+.node__toggle--inline text {
+  font-size: 10px;
 }
