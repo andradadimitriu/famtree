@@ -10,3 +10,4 @@ as a feature grows.
 - [marriages_data](marriages_data/spec.md) — spouses as separate cards joined by a marriage node (data shape superseded by people-and-relationships)
 - [ancestors](ancestors/spec.md) — spouses (and the root) can show their own ancestry above their card
 - [people-and-relationships](people-and-relationships/spec.md) — normalized `people`/`marriages`/`parentage` store, replacing the nested tree literal
+- [collapse-parents](collapse-parents/spec.md) — every node with a parent gets a toggle to collapse that parent generation, not just spouses/root
