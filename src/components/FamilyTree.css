@@ -71,3 +71,7 @@
   font: 700 12px system-ui, sans-serif;
   pointer-events: none;
 }
+
+.node__toggle--inline text {
+  font-size: 10px;
+}

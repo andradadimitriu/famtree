@@ -77,9 +77,12 @@ Spouse/root ancestor stacks keep defaulting to **collapsed**, per
 
 ## Rendering
 
-- Toggle placement, size, and glyph (`+` collapsed / `–` expanded) match
-  the existing `node__toggle` style used below a marriage connector and
-  above a spouse's card — no new visual language.
+- The toggle sits inside the card, in a reserved strip above the name
+  (`node__toggle`/`node__toggle--inline`) — not floating outside the
+  card's border. This is a shared treatment: the
+  [ancestors](../ancestors/spec.md) toggle (spouses/root) was updated to
+  match, so every such toggle in the tree now occupies real space inside
+  its card rather than being positioned on top of existing content.
 - Collapsing on person P hides, going up generation by generation from P
   to the root:
   - P's parent generation's card(s) and marriage connector, and the link

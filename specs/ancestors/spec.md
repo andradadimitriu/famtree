@@ -64,10 +64,13 @@ person who has no parent already visible in the tree:
 ## Rendering
 
 - A person whose id has a `parentMarriageByChild` entry gets a small
-  `+`/`–` toggle **above** their card, mirroring the existing below-card
-  children toggle
-  (`node__toggle`, same circle-plus-glyph style) — but centered above the
-  card instead of below the union connector.
+  `+`/`–` toggle inside their card, in a reserved strip above the name
+  (`node__toggle`/`node__toggle--inline`, same circle-plus-glyph style as
+  the below-card children toggle, and the same reserved-space treatment
+  the [collapse-parents](../collapse-parents/spec.md) toggle uses) —
+  rather than floating outside the card. When expanded, the connecting
+  line up to the parent pair still meets the card at its actual top edge,
+  not at the toggle itself, so it doesn't visually cut across the card.
 - Collapsed is the default (consistent with `collapseBelowDepth`, which
   already opens the tree partially collapsed rather than dumping every
   generation at once). Clicking the toggle expands/collapses just that

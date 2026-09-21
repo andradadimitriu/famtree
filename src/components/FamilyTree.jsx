@@ -7,7 +7,10 @@ import './FamilyTree.css'
 const NODE_WIDTH = 190
 const NODE_HEIGHT = 110
 const CARD_WIDTH = 150
-const CARD_HEIGHT = 56
+// Tall enough to give the inline "collapse parents" toggle its own
+// reserved strip above the name, rather than overlapping it.
+const CARD_HEIGHT = 72
+const PARENT_TOGGLE_SLOT = 22
 
 // Married nodes render extra cards (one per spouse) joined to the person
 // by a marriage node, so they need more horizontal room than a single card.
@@ -134,17 +137,23 @@ function AncestorStack({ person, x, y, onToggle }) {
   if (!hasAncestors) return null
 
   const isCollapsed = Boolean(person._parents)
-  const toggleY = y - CARD_HEIGHT / 2 - 14
+  // Same reserved strip as the "collapse parents" toggle on an ordinary
+  // tree child (see PARENT_TOGGLE_SLOT) — the badge itself sits inside
+  // the card, but the connecting line up to an expanded ancestor pair
+  // still meets the card at its actual top edge, not at the badge, so it
+  // doesn't appear to cut across the card's interior.
+  const toggleY = y - CARD_HEIGHT / 2 + PARENT_TOGGLE_SLOT / 2
+  const cardTopY = y - CARD_HEIGHT / 2
 
   return (
     <g className="node__ancestors">
       <g
-        className="node__toggle node__toggle--interactive"
+        className="node__toggle node__toggle--interactive node__toggle--inline"
         transform={`translate(${x}, ${toggleY})`}
         onClick={() => onToggle(person)}
       >
-        <circle r={9} />
-        <text textAnchor="middle" dy={4}>
+        <circle r={7} />
+        <text textAnchor="middle" dy={3}>
           {isCollapsed ? '+' : '–'}
         </text>
       </g>
@@ -162,7 +171,7 @@ function AncestorStack({ person, x, y, onToggle }) {
                 x1={x}
                 x2={x}
                 y1={parentY}
-                y2={toggleY}
+                y2={cardTopY}
               />
               {parents.length === 2 && (
                 <>
@@ -219,18 +228,6 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
 
   return (
     <g className="node" transform={`translate(${x}, ${y})`}>
-      {showParentRowToggle && (
-        <g
-          className="node__toggle node__toggle--interactive"
-          transform={`translate(0, ${-CARD_HEIGHT / 2 - 14})`}
-          onClick={() => onToggleParentRow(node)}
-        >
-          <circle r={9} />
-          <text textAnchor="middle" dy={4}>
-            {parentRowHidden ? '+' : '–'}
-          </text>
-        </g>
-      )}
       {marriages.map((marriage, i) => {
         const hasChildren = Boolean(marriage.children || marriage._children)
         const isCollapsed = Boolean(marriage._children)
@@ -269,6 +266,18 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
         )
       })}
       <PersonCard person={data} x={0} />
+      {showParentRowToggle && (
+        <g
+          className="node__toggle node__toggle--interactive node__toggle--inline"
+          transform={`translate(0, ${-CARD_HEIGHT / 2 + PARENT_TOGGLE_SLOT / 2})`}
+          onClick={() => onToggleParentRow(node)}
+        >
+          <circle r={7} />
+          <text textAnchor="middle" dy={3}>
+            {parentRowHidden ? '+' : '–'}
+          </text>
+        </g>
+      )}
       <AncestorStack person={data} x={0} y={0} onToggle={onToggleAncestors} />
       {marriages.map(
         (marriage, i) =>
