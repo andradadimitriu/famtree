@@ -1,6 +1,7 @@
+'use client'
+
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
-import { people, marriages as marriageData, parentage, rootId } from '../data/familyData'
 import { buildFamilyTree } from '../data/familyGraph'
 import './FamilyTree.css'
 
@@ -297,10 +298,10 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
   )
 }
 
-export default function FamilyTree() {
+export default function FamilyTree({ people, marriages, parentage, rootId }) {
   const rootDataRef = useRef(null)
   if (!rootDataRef.current) {
-    const data = buildFamilyTree(people, marriageData, parentage, rootId)
+    const data = buildFamilyTree(people, marriages, parentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
   }

@@ -1,18 +1,11 @@
-// Normalized family data: people are stored once, keyed by id, and every
-// relationship references people by id instead of nesting them. See
-// specs/people-and-relationships/spec.md for the reasoning.
-//
-// - `people`: id -> { name, born }
-// - `marriages`: an edge between 1-2 person ids (1 = the other spouse is
-//   unknown/unrecorded, e.g. a parent whose partner wasn't recorded)
-// - `parentage`: which marriage a person was born from — this single
-//   relationship is *both* "children of this marriage" and "parents of
-//   this person", just read in opposite directions
-//
-// `src/data/familyGraph.js` turns this into the nested tree
-// `FamilyTree.jsx` actually renders.
+// One-time seed: inserts the sample family (previously hand-written in
+// src/data/familyData.js) into the SQLite tables. Re-running it is safe —
+// it clears the three tables first. See specs/persistence/spec.md.
 
-export const people = {
+import { db } from './client.js'
+import { people, marriages, parentage } from './schema.js'
+
+const peopleData = {
   'eleanor-whitfield': { name: 'Eleanor Whitfield', born: 1930 },
   'henry-whitfield': { name: 'Henry Whitfield', born: 1928 },
 
@@ -49,7 +42,7 @@ export const people = {
   'olivia-whitfield': { name: 'Olivia Whitfield', born: 1990 },
 }
 
-export const marriages = [
+const marriagesData = [
   { id: 'eleanor-henry', spouses: ['eleanor-whitfield', 'henry-whitfield'] },
 
   { id: 'margaret-david', spouses: ['margaret-hayes', 'david-hayes'] },
@@ -69,7 +62,7 @@ export const marriages = [
   { id: 'thomas-patricia', spouses: ['thomas-whitfield', 'patricia-whitfield'] },
 ]
 
-export const parentage = [
+const parentageData = [
   { marriageId: 'eleanor-henry', childId: 'margaret-hayes' },
   { marriageId: 'eleanor-henry', childId: 'robert-whitfield' },
   { marriageId: 'eleanor-henry', childId: 'thomas-whitfield' },
@@ -94,4 +87,26 @@ export const parentage = [
   { marriageId: 'thomas-patricia', childId: 'olivia-whitfield' },
 ]
 
-export const rootId = 'eleanor-whitfield'
+db.delete(parentage).run()
+db.delete(marriages).run()
+db.delete(people).run()
+
+db.insert(people)
+  .values(Object.entries(peopleData).map(([id, p]) => ({ id, name: p.name, born: p.born })))
+  .run()
+
+db.insert(marriages)
+  .values(
+    marriagesData.map((m) => ({
+      id: m.id,
+      spouse1Id: m.spouses[0],
+      spouse2Id: m.spouses[1] ?? null,
+    })),
+  )
+  .run()
+
+db.insert(parentage).values(parentageData).run()
+
+console.log(
+  `Seeded ${Object.keys(peopleData).length} people, ${marriagesData.length} marriages, ${parentageData.length} parentage records.`,
+)

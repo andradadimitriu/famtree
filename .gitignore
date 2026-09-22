@@ -11,6 +11,14 @@ node_modules
 dist
 dist-ssr
 *.local
+.next
+
+# Local SQLite database and uploaded photos — see specs/persistence/spec.md
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/uploads/
 
 # Editor directories and files
 .vscode/*

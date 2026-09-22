@@ -11,3 +11,4 @@ as a feature grows.
 - [ancestors](ancestors/spec.md) — spouses (and the root) can show their own ancestry above their card
 - [people-and-relationships](people-and-relationships/spec.md) — normalized `people`/`marriages`/`parentage` store, replacing the nested tree literal
 - [collapse-parents](collapse-parents/spec.md) — every node with a parent gets a toggle to collapse that parent generation, not just spouses/root
+- [persistence](persistence/spec.md) — move from the static `familyData.js` module to a local SQLite database (Drizzle) behind Next.js, plus file storage for scanned photos
