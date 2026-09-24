@@ -6,16 +6,22 @@ import { getFamilyData } from '../src/db/queries'
 export const dynamic = 'force-dynamic'
 
 export default function Home() {
-  const { people, marriages, parentage, rootId } = getFamilyData()
+  const { people, marriages, parentage, rootId, peopleDetails } = getFamilyData()
 
   return (
     <div className="app">
       <header className="app__header">
         <h1>Family Tree</h1>
-        <p>Click a node to expand or collapse its descendants.</p>
+        <p>Click a node to expand or collapse its descendants. Click a name for details.</p>
       </header>
       <main className="app__main">
-        <FamilyTree people={people} marriages={marriages} parentage={parentage} rootId={rootId} />
+        <FamilyTree
+          people={people}
+          marriages={marriages}
+          parentage={parentage}
+          rootId={rootId}
+          peopleDetails={peopleDetails}
+        />
       </main>
     </div>
   )

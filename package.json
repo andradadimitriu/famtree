@@ -18,12 +18,14 @@
     "drizzle-orm": "^0.45.3",
     "next": "^16.3.5",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "drizzle-kit": "^0.31.11",
-    "oxlint": "^1.81.0"
+    "oxlint": "^1.81.0",
+    "playwright": "^1.63.0"
   }
 }

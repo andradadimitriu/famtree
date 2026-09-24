@@ -48,7 +48,9 @@ function buildAncestors(personId, people, indices) {
 // scope for rendering, same reasoning.
 function buildPerson(personId, people, indices, { includeMarriages, includeAncestors }) {
   const person = people[personId]
-  const node = { name: person.name, born: person.born }
+  // `id` is what lets a clicked card look itself up in the separate,
+  // flat `peopleDetails` map — see specs/person-details/spec.md.
+  const node = { id: personId, name: person.name, born: person.born }
 
   const personMarriages = includeMarriages ? indices.marriagesByPerson[personId] : undefined
   if (personMarriages?.length) {

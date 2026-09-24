@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { buildFamilyTree } from '../data/familyGraph'
+import PersonPanel from './PersonPanel'
 import './FamilyTree.css'
 
 const NODE_WIDTH = 190
@@ -101,7 +102,7 @@ function hideSubtree(node, hiddenData) {
   node.children?.forEach((child) => hideSubtree(child, hiddenData))
 }
 
-function PersonCard({ person, x, y = 0, isSpouse, isAncestor }) {
+function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) {
   return (
     <g
       transform={`translate(${x}, ${y})`}
@@ -115,7 +116,12 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor }) {
         height={CARD_HEIGHT}
         rx={8}
       />
-      <text className="node__name" y={-6} textAnchor="middle">
+      <text
+        className="node__name node__name--clickable"
+        y={-6}
+        textAnchor="middle"
+        onClick={() => onSelectPerson(person.id)}
+      >
         {person.name}
       </text>
       {person.born && (
@@ -133,7 +139,7 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor }) {
 // layout `FamilyNode` sits in — it's a fixed local offset above whichever
 // card it's attached to, so (per specs/ancestors/spec.md) it can visually
 // overlap a neighboring node in a wide/deep tree. Accepted for now.
-function AncestorStack({ person, x, y, onToggle }) {
+function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
   const hasAncestors = Boolean(person.parents || person._parents)
   if (!hasAncestors) return null
 
@@ -188,12 +194,19 @@ function AncestorStack({ person, x, y, onToggle }) {
               )}
               {parents.map((parent, i) => (
                 <g key={i}>
-                  <PersonCard person={parent} x={positions[i]} y={parentY} isAncestor />
+                  <PersonCard
+                    person={parent}
+                    x={positions[i]}
+                    y={parentY}
+                    isAncestor
+                    onSelectPerson={onSelectPerson}
+                  />
                   <AncestorStack
                     person={parent}
                     x={positions[i]}
                     y={parentY}
                     onToggle={onToggle}
+                    onSelectPerson={onSelectPerson}
                   />
                 </g>
               ))}
@@ -208,7 +221,13 @@ function AncestorStack({ person, x, y, onToggle }) {
 // cards joined by a small marriage node. Clicking a marriage's connector
 // expands/collapses only that marriage's children, independent of any
 // other marriage this person has.
-function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentRow }) {
+function FamilyNode({
+  node,
+  onToggleMarriage,
+  onToggleAncestors,
+  onToggleParentRow,
+  onSelectPerson,
+}) {
   const { data, x, y } = node
   const marriages = data.marriages ?? []
 
@@ -266,7 +285,7 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
           </g>
         )
       })}
-      <PersonCard person={data} x={0} />
+      <PersonCard person={data} x={0} onSelectPerson={onSelectPerson} />
       {showParentRowToggle && (
         <g
           className="node__toggle node__toggle--interactive node__toggle--inline"
@@ -279,17 +298,29 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
           </text>
         </g>
       )}
-      <AncestorStack person={data} x={0} y={0} onToggle={onToggleAncestors} />
+      <AncestorStack
+        person={data}
+        x={0}
+        y={0}
+        onToggle={onToggleAncestors}
+        onSelectPerson={onSelectPerson}
+      />
       {marriages.map(
         (marriage, i) =>
           marriage.spouse && (
             <g key={i}>
-              <PersonCard person={marriage.spouse} x={spouseCenterX(i)} isSpouse />
+              <PersonCard
+                person={marriage.spouse}
+                x={spouseCenterX(i)}
+                isSpouse
+                onSelectPerson={onSelectPerson}
+              />
               <AncestorStack
                 person={marriage.spouse}
                 x={spouseCenterX(i)}
                 y={0}
                 onToggle={onToggleAncestors}
+                onSelectPerson={onSelectPerson}
               />
             </g>
           ),
@@ -298,7 +329,7 @@ function FamilyNode({ node, onToggleMarriage, onToggleAncestors, onToggleParentR
   )
 }
 
-export default function FamilyTree({ people, marriages, parentage, rootId }) {
+export default function FamilyTree({ people, marriages, parentage, rootId, peopleDetails }) {
   const rootDataRef = useRef(null)
   if (!rootDataRef.current) {
     const data = buildFamilyTree(people, marriages, parentage, rootId)
@@ -307,6 +338,11 @@ export default function FamilyTree({ people, marriages, parentage, rootId }) {
   }
 
   const [version, setVersion] = useState(0)
+  // Deliberately not funneled through rootDataRef — peopleDetails is a
+  // flat, id-keyed prop read straight from render, so a revalidated
+  // fetch after a bio/photo edit flows in immediately without touching
+  // the frozen collapse-state tree. See specs/person-details/spec.md.
+  const [selectedPersonId, setSelectedPersonId] = useState(null)
 
   const handleToggleMarriage = (node, unionIndex) => {
     const marriage = node.data.marriages[unionIndex]
@@ -418,43 +454,51 @@ export default function FamilyTree({ people, marriages, parentage, rootId }) {
 
   return (
     <div className="family-tree">
-      <svg
-        className="family-tree__svg"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Family tree"
-      >
-        <g transform={`translate(${offsetX}, ${topMargin})`}>
-          {links.map((link) => {
-            // A child links to the connector of the specific marriage it
-            // came from, not to the person's own card position.
-            const unionIndex = link.target.data.__unionIndex
-            const source =
-              unionIndex === undefined
-                ? link.source
-                : {
-                    x: link.source.x + connectorX(unionIndex),
-                    y: link.source.y,
-                  }
-            return (
-              <path
-                key={`${link.source.x},${link.source.y}-${link.target.x},${link.target.y}`}
-                className="link"
-                d={linkPath({ source, target: link.target })}
+      <PersonPanel
+        personId={selectedPersonId}
+        details={selectedPersonId ? peopleDetails[selectedPersonId] : null}
+        onClose={() => setSelectedPersonId(null)}
+      />
+      <div className="family-tree__viewport">
+        <svg
+          className="family-tree__svg"
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label="Family tree"
+        >
+          <g transform={`translate(${offsetX}, ${topMargin})`}>
+            {links.map((link) => {
+              // A child links to the connector of the specific marriage it
+              // came from, not to the person's own card position.
+              const unionIndex = link.target.data.__unionIndex
+              const source =
+                unionIndex === undefined
+                  ? link.source
+                  : {
+                      x: link.source.x + connectorX(unionIndex),
+                      y: link.source.y,
+                    }
+              return (
+                <path
+                  key={`${link.source.x},${link.source.y}-${link.target.x},${link.target.y}`}
+                  className="link"
+                  d={linkPath({ source, target: link.target })}
+                />
+              )
+            })}
+            {nodes.map((node) => (
+              <FamilyNode
+                key={`${node.x},${node.y},${node.data.name}`}
+                node={node}
+                onToggleMarriage={handleToggleMarriage}
+                onToggleAncestors={handleToggleAncestors}
+                onToggleParentRow={handleToggleParentRow}
+                onSelectPerson={setSelectedPersonId}
               />
-            )
-          })}
-          {nodes.map((node) => (
-            <FamilyNode
-              key={`${node.x},${node.y},${node.data.name}`}
-              node={node}
-              onToggleMarriage={handleToggleMarriage}
-              onToggleAncestors={handleToggleAncestors}
-              onToggleParentRow={handleToggleParentRow}
-            />
-          ))}
-        </g>
-      </svg>
+            ))}
+          </g>
+        </svg>
+      </div>
     </div>
   )
 }

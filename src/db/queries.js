@@ -3,8 +3,9 @@
 // expects — the same shape familyData.js used to export directly.
 // See specs/persistence/spec.md.
 
+import { isNotNull } from 'drizzle-orm'
 import { db } from './client.js'
-import { people, marriages, parentage } from './schema.js'
+import { people, marriages, parentage, photos } from './schema.js'
 
 // Only one tree is rendered today, so this stays a plain constant rather
 // than a table — see specs/persistence/spec.md.
@@ -28,5 +29,34 @@ export function getFamilyData() {
       childId: p.childId,
     })),
     rootId,
+    peopleDetails: getPeopleDetails(peopleRows),
   }
+}
+
+// Flat, id-keyed bio/photo data — kept separate from the nested tree
+// `buildFamilyTree` produces, since that tree isn't deduped by person id
+// and is only ever built once client-side. See specs/person-details/spec.md.
+function getPeopleDetails(peopleRows) {
+  const photoRows = db.select().from(photos).where(isNotNull(photos.personId)).all()
+
+  const photosByPerson = {}
+  photoRows.forEach((photo) => {
+    ;(photosByPerson[photo.personId] ??= []).push({
+      id: photo.id,
+      url: `/photos/${photo.id}`,
+      caption: photo.caption ?? undefined,
+    })
+  })
+
+  return Object.fromEntries(
+    peopleRows.map((p) => [
+      p.id,
+      {
+        name: p.name,
+        born: p.born ?? undefined,
+        bio: p.bio ?? '',
+        photos: photosByPerson[p.id] ?? [],
+      },
+    ]),
+  )
 }

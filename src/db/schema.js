@@ -8,6 +8,7 @@ export const people = sqliteTable('people', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   born: integer('born'),
+  bio: text('bio'), // Markdown source — see specs/person-details/spec.md
 })
 
 export const marriages = sqliteTable('marriages', {

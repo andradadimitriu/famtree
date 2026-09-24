@@ -1,6 +1,20 @@
+/* No explicit height here — an explicit percentage height on a flex item
+   nested inside another flex container (.app__main) doesn't reliably
+   resolve. Leaving height auto lets .app__main's default
+   align-items: stretch fill it instead, which is the reliable path. */
 .family-tree {
   width: 100%;
-  height: 100%;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+/* The panel is a real flex sibling (see PersonPanel.css), not an overlay,
+   so this viewport only gets whatever width is left beside it — the SVG
+   (max-width: 100%) reflows to fit, rather than being covered. */
+.family-tree__viewport {
+  flex: 1;
+  min-width: 0;
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -36,6 +50,15 @@
 .node__meta {
   font: 11px system-ui, 'Segoe UI', sans-serif;
   fill: #616e7c;
+}
+
+.node__name--clickable {
+  cursor: pointer;
+}
+
+.node__name--clickable:hover {
+  fill: #6c8ebf;
+  text-decoration: underline;
 }
 
 .node__marriage-line {

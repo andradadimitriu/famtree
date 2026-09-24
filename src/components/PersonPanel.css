@@ -1,0 +1,218 @@
+/* A real flex sibling of the tree viewport (see FamilyTree.css), not an
+   overlay — animating width (rather than a fixed width + translateX) is
+   what makes the tree viewport actually reflow into the freed-up space
+   as this opens/closes, instead of the panel just floating on top of it. */
+.person-panel {
+  flex-shrink: 0;
+  width: 0;
+  overflow: hidden;
+  background: #ffffff;
+  border-right: 0 solid #b8c4d0;
+  transition:
+    width 0.2s ease,
+    border-right-width 0.2s ease;
+}
+
+.person-panel--open {
+  width: min(360px, 90vw);
+  border-right-width: 1px;
+}
+
+/* Fixed width regardless of the outer clip state, so content reveals as
+   the panel opens rather than visually squishing/reflowing mid-transition. */
+.person-panel__inner {
+  width: min(360px, 90vw);
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 1.25rem;
+  font: 14px/1.5 system-ui, 'Segoe UI', sans-serif;
+  color: #1f2933;
+}
+
+.person-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.person-panel__header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.person-panel__close {
+  border: none;
+  background: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #616e7c;
+  padding: 0.15rem 0.4rem;
+}
+
+.person-panel__close:hover {
+  color: #1f2933;
+}
+
+.person-panel__section {
+  margin-bottom: 1.5rem;
+}
+
+.person-panel__section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #616e7c;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.person-panel__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.person-panel__section-header h3 {
+  margin: 0;
+}
+
+.person-panel__icon-button {
+  border: 1px solid #b8c4d0;
+  background: #f8fafb;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.person-panel__icon-button:hover {
+  border-color: #6c8ebf;
+}
+
+.person-panel__bio {
+  color: #1f2933;
+}
+
+.person-panel__bio :first-child {
+  margin-top: 0;
+}
+
+.person-panel__bio :last-child {
+  margin-bottom: 0;
+}
+
+.person-panel__empty {
+  color: #9aa5b1;
+  font-style: italic;
+  margin: 0;
+}
+
+.person-panel__editor-toolbar {
+  margin-bottom: 0.4rem;
+}
+
+.person-panel__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: 13px/1.5 ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  border: 1px solid #b8c4d0;
+  border-radius: 6px;
+  padding: 0.5rem;
+  resize: vertical;
+}
+
+.person-panel__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.person-panel__form-actions button {
+  border: 1px solid #b8c4d0;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.person-panel__form-actions button[type='submit'] {
+  background: #6c8ebf;
+  border-color: #6c8ebf;
+  color: #ffffff;
+}
+
+.person-panel__error {
+  color: #b0454e;
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+}
+
+.person-panel__photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.person-panel__photo {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.person-panel__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #b8c4d0;
+  display: block;
+}
+
+.person-panel__photo form {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
+.person-panel__photo-delete {
+  border: none;
+  background: rgba(31, 41, 51, 0.6);
+  color: #ffffff;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.person-panel__photo-delete:hover {
+  background: rgba(176, 69, 78, 0.85);
+}
+
+.person-panel__upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.person-panel__upload-form input[type='text'] {
+  border: 1px solid #b8c4d0;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+}
+
+.person-panel__upload-form button {
+  align-self: flex-start;
+  border: 1px solid #6c8ebf;
+  background: #6c8ebf;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
