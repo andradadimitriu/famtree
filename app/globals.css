@@ -1,11 +1,45 @@
+/* Design tokens shared by every component's CSS (FamilyTree.css,
+   PersonPanel.css) — redefined below for dark mode so the whole app
+   (not just native form controls, which `color-scheme` alone covers)
+   responds to prefers-color-scheme. */
 :root {
   color-scheme: light dark;
   font: 16px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafb;
+  --color-text: #1f2933;
+  --color-text-muted: #616e7c;
+  --color-text-faint: #9aa5b1;
+  --color-border: #b8c4d0;
+  --color-accent: #6c8ebf;
+  --color-accent-contrast: #ffffff;
+  --color-marriage: #f6a5c0;
+  --color-error: #b0454e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14181d;
+    --color-surface: #1c2229;
+    --color-surface-muted: #242b33;
+    --color-text: #e4e9ee;
+    --color-text-muted: #9aa7b4;
+    --color-text-faint: #6b7784;
+    --color-border: #3a434d;
+    --color-accent: #8fb1dd;
+    --color-accent-contrast: #14181d;
+    --color-marriage: #f0a8c2;
+    --color-error: #ff8a90;
+  }
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 .app {
@@ -25,7 +59,7 @@ body {
 
 .app__header p {
   margin: 0;
-  color: #616e7c;
+  color: var(--color-text-muted);
 }
 
 .app__main {

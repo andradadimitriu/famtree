@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useRef, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   MDXEditor,
@@ -41,6 +41,20 @@ export default function PersonPanel({ personId, details, onClose }) {
   const editorRef = useRef(null)
   const [bioPending, setBioPending] = useState(false)
   const [bioError, setBioError] = useState(null)
+
+  // MDXEditor ships its own `dark-theme` class covering its full internal
+  // palette (dialogs, hover/disabled states, etc. — well beyond the 4
+  // vars PersonPanel.css overrides). Starts false and syncs in an effect,
+  // not read from matchMedia during render, so the server-rendered and
+  // first-hydrated markup match (window isn't available on the server).
+  const [isDarkMode, setIsDarkMode] = useState(false)
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    setIsDarkMode(query.matches)
+    const handleChange = (event) => setIsDarkMode(event.matches)
+    query.addEventListener('change', handleChange)
+    return () => query.removeEventListener('change', handleChange)
+  }, [])
 
   // Drag-to-resize from the right edge. Width is independent of which
   // person is selected (isn't reset by the lastPersonId check below) — a
@@ -159,7 +173,7 @@ export default function PersonPanel({ personId, details, onClose }) {
                     <MDXEditor
                       ref={editorRef}
                       markdown={details.bio}
-                      className="person-panel__editor"
+                      className={`person-panel__editor${isDarkMode ? ' dark-theme' : ''}`}
                       contentEditableClassName="person-panel__editor-content"
                       plugins={[
                         headingsPlugin(),

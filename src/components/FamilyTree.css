@@ -28,13 +28,13 @@
 
 .link {
   fill: none;
-  stroke: #b8c4d0;
+  stroke: var(--color-border);
   stroke-width: 2;
 }
 
 .node__card {
-  fill: #ffffff;
-  stroke: #6c8ebf;
+  fill: var(--color-surface);
+  stroke: var(--color-accent);
   stroke-width: 1.5;
 }
 
@@ -44,12 +44,12 @@
 
 .node__name {
   font: 600 13px system-ui, 'Segoe UI', sans-serif;
-  fill: #1f2933;
+  fill: var(--color-text);
 }
 
 .node__meta {
   font: 11px system-ui, 'Segoe UI', sans-serif;
-  fill: #616e7c;
+  fill: var(--color-text-muted);
 }
 
 .node__name--clickable {
@@ -57,18 +57,18 @@
 }
 
 .node__name--clickable:hover {
-  fill: #6c8ebf;
+  fill: var(--color-accent);
   text-decoration: underline;
 }
 
 .node__marriage-line {
-  stroke: #6c8ebf;
+  stroke: var(--color-accent);
   stroke-width: 1.5;
 }
 
 .node__marriage {
-  fill: #f6a5c0;
-  stroke: #6c8ebf;
+  fill: var(--color-marriage);
+  stroke: var(--color-accent);
   stroke-width: 1.5;
 }
 
@@ -77,8 +77,8 @@
 }
 
 .node__person--ancestor .node__card {
-  stroke: #9aa5b1;
-  fill: #f8fafb;
+  stroke: var(--color-text-faint);
+  fill: var(--color-surface-muted);
 }
 
 .node__toggle--interactive {
@@ -86,11 +86,11 @@
 }
 
 .node__toggle circle {
-  fill: #6c8ebf;
+  fill: var(--color-accent);
 }
 
 .node__toggle text {
-  fill: #ffffff;
+  fill: var(--color-accent-contrast);
   font: 700 12px system-ui, sans-serif;
   pointer-events: none;
 }
