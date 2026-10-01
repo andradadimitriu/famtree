@@ -16,29 +16,38 @@ export async function updatePersonBio(personId, _prevState, formData) {
   return { error: null }
 }
 
-// Also returns the created photo, not just an error — the inline
-// insert-image flow in the Markdown editor calls this directly (not
-// through a <form>) and needs the URL back to splice into the textarea.
-// See specs/person-details/spec.md.
+// Accepts one or more `file` entries (the gallery form's input allows
+// multi-select; the inline insert-image flow in the Markdown editor
+// always sends exactly one). Returns the created photos, not just an
+// error — the inline flow calls this directly (not through a <form>) and
+// needs the URL back to splice into the editor. See
+// specs/person-details/spec.md.
 export async function uploadPersonPhoto(personId, _prevState, formData) {
-  const file = formData.get('file')
+  const files = formData.getAll('file').filter((file) => file instanceof File && file.size > 0)
   const caption = formData.get('caption')?.toString() || null
 
-  let filePath
-  try {
-    filePath = await savePhotoFile(personId, file)
-  } catch (error) {
-    return { error: error.message, photo: null }
+  if (files.length === 0) {
+    return { error: 'No file provided', photos: [] }
   }
 
-  const [photo] = db
-    .insert(photos)
-    .values({ personId, filePath, caption })
-    .returning()
-    .all()
+  const uploaded = []
+  let error = null
+  for (const file of files) {
+    try {
+      const filePath = await savePhotoFile(personId, file)
+      const [photo] = db.insert(photos).values({ personId, filePath, caption }).returning().all()
+      uploaded.push({ id: photo.id, url: `/photos/${photo.id}`, caption })
+    } catch (err) {
+      error =
+        uploaded.length > 0
+          ? `Uploaded ${uploaded.length} of ${files.length} — ${err.message}`
+          : err.message
+      break
+    }
+  }
 
   revalidatePath('/')
-  return { error: null, photo: { id: photo.id, url: `/photos/${photo.id}`, caption } }
+  return { error, photos: uploaded }
 }
 
 export async function deletePersonPhoto(photoId) {

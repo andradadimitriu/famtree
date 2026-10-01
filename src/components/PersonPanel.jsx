@@ -23,7 +23,7 @@ import { updatePersonBio, uploadPersonPhoto, deletePersonPhoto } from '../db/act
 import './PersonPanel.css'
 
 const noopAction = async (state) => state
-const initialUploadState = { error: null, photo: null }
+const initialUploadState = { error: null, photos: [] }
 const DEFAULT_PANEL_WIDTH = 360
 const MIN_PANEL_WIDTH = 280
 const MAX_PANEL_WIDTH_RATIO = 0.7
@@ -111,7 +111,7 @@ export default function PersonPanel({ personId, details, onClose }) {
     formData.set('file', file)
     const result = await uploadPersonPhoto(personId, null, formData)
     if (result.error) throw new Error(result.error)
-    return result.photo.url
+    return result.photos[0].url
   }
 
   return (
@@ -222,10 +222,10 @@ export default function PersonPanel({ personId, details, onClose }) {
                   ))}
                 </div>
                 <form action={uploadFormAction} className="person-panel__upload-form">
-                  <input type="file" name="file" accept="image/*" required />
-                  <input type="text" name="caption" placeholder="Caption (optional)" />
+                  <input type="file" name="file" accept="image/*" multiple required />
+                  <input type="text" name="caption" placeholder="Caption (optional, applies to all selected)" />
                   <button type="submit" disabled={uploadPending}>
-                    {uploadPending ? 'Uploading…' : 'Upload photo'}
+                    {uploadPending ? 'Uploading…' : 'Upload photos'}
                   </button>
                 </form>
                 {uploadState.error && <p className="person-panel__error">{uploadState.error}</p>}
