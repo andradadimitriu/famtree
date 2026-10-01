@@ -1,10 +1,11 @@
 /* A real flex sibling of the tree viewport (see FamilyTree.css), not an
    overlay — animating width (rather than a fixed width + translateX) is
    what makes the tree viewport actually reflow into the freed-up space
-   as this opens/closes, instead of the panel just floating on top of it. */
+   as this opens/closes, instead of the panel just floating on top of it.
+   Width itself is inline-styled from PersonPanel.jsx's `panelWidth`
+   state (user-resizable via the drag handle below), not fixed here. */
 .person-panel {
   flex-shrink: 0;
-  width: 0;
   overflow: hidden;
   background: #ffffff;
   border-right: 0 solid #b8c4d0;
@@ -14,20 +15,36 @@
 }
 
 .person-panel--open {
-  width: min(360px, 90vw);
   border-right-width: 1px;
 }
 
-/* Fixed width regardless of the outer clip state, so content reveals as
-   the panel opens rather than visually squishing/reflowing mid-transition. */
+/* No width transition while actively dragging — it would lag a beat
+   behind the mouse instead of tracking it directly. */
+.person-panel--resizing {
+  transition: none;
+}
+
 .person-panel__inner {
-  width: min(360px, 90vw);
   height: 100%;
   box-sizing: border-box;
   overflow-y: auto;
   padding: 1.25rem;
   font: 14px/1.5 system-ui, 'Segoe UI', sans-serif;
   color: #1f2933;
+}
+
+/* Sits between the panel and the tree viewport as its own flex item (see
+   FamilyTree.jsx) — a thin drag target to resize the panel horizontally. */
+.person-panel__resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  cursor: ew-resize;
+  transition: background-color 0.15s ease;
+}
+
+.person-panel__resize-handle:hover,
+.person-panel__resize-handle--active {
+  background: rgba(108, 142, 191, 0.3);
 }
 
 .person-panel__header {
@@ -105,24 +122,51 @@
   margin-bottom: 0;
 }
 
+.person-panel__bio img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 .person-panel__empty {
   color: #9aa5b1;
   font-style: italic;
   margin: 0;
 }
 
-.person-panel__editor-toolbar {
-  margin-bottom: 0.4rem;
-}
-
-.person-panel__textarea {
-  width: 100%;
-  box-sizing: border-box;
-  font: 13px/1.5 ui-monospace, 'SFMono-Regular', Consolas, monospace;
+/* MDXEditor themes via CSS custom properties (Radix semantic aliasing),
+   not class overrides — see specs/bio-editor/spec.md. This nudges its
+   default theme toward the app's existing palette (FamilyTree.css) rather
+   than fully re-skinning it. */
+.person-panel__editor {
+  --accentText: #6c8ebf;
+  --accentSolid: #6c8ebf;
+  --baseText: #1f2933;
+  --baseBg: #ffffff;
   border: 1px solid #b8c4d0;
   border-radius: 6px;
-  padding: 0.5rem;
-  resize: vertical;
+  font-size: 14px;
+}
+
+.person-panel__editor-content {
+  min-height: 8rem;
+}
+
+.person-panel__editor-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+/* MDXEditor's default toolbar is a single row with horizontal scroll and
+   no visible scroll affordance — at this panel's ~360px width that
+   scrolls several buttons (including Insert image) out of view with no
+   indication more exist. Wrapping onto multiple rows instead keeps every
+   button visible without needing horizontal scrolling. */
+.person-panel__editor [role='toolbar'] {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  height: auto;
 }
 
 .person-panel__form-actions {
