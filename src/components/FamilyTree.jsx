@@ -34,6 +34,14 @@ const connectorX = (i) =>
 const SIBLING_GAP = NODE_WIDTH - CARD_WIDTH
 const COUSIN_GAP = NODE_WIDTH * 2 - CARD_WIDTH
 
+// Where a marriage's "add children" toggle sits below the card: distance
+// from the card's vertical center to the toggle's own center, plus its
+// radius — the real lowest extent of a card's rendered content, needed to
+// size the SVG tall enough that the bottom row's toggle isn't clipped.
+const UNION_TOGGLE_OFFSET = 14
+const UNION_TOGGLE_RADIUS = 9
+const BOTTOM_MARGIN = CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET + UNION_TOGGLE_RADIUS
+
 function personHalfWidth(marriages) {
   const half = CARD_WIDTH / 2
   if (!marriages) return half
@@ -274,9 +282,9 @@ function FamilyNode({
             {hasChildren && (
               <g
                 className="node__toggle"
-                transform={`translate(${connX}, ${CARD_HEIGHT / 2 + 14})`}
+                transform={`translate(${connX}, ${CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET})`}
               >
-                <circle r={9} />
+                <circle r={UNION_TOGGLE_RADIUS} />
                 <text textAnchor="middle" dy={4}>
                   {isCollapsed ? '+' : '–'}
                 </text>
@@ -438,7 +446,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
         .links()
         .filter((link) => !hiddenData.has(link.source.data) && !hiddenData.has(link.target.data)),
       width: maxX - minX,
-      height: maxY + NODE_HEIGHT + maxAncestorDepth * NODE_HEIGHT,
+      height: maxY + NODE_HEIGHT / 2 + BOTTOM_MARGIN + maxAncestorDepth * NODE_HEIGHT,
       offsetX: -minX,
       topMargin,
     }
