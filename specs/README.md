@@ -14,3 +14,5 @@ as a feature grows.
 - [persistence](persistence/spec.md) — move from the static `familyData.js` module to a local SQLite database (Drizzle) behind Next.js, plus file storage for scanned photos
 - [person-details](person-details/spec.md) — clickable name opens a slide-in panel with an editable Markdown bio and a photo gallery, including inline image upload into the Markdown
 - [bio-editor](bio-editor/spec.md) — replace the raw-Markdown textarea with MDXEditor, a WYSIWYG editor, for the bio edit mode
+- [accounts-and-trees](accounts-and-trees/spec.md) — user accounts (email+password, Google, silent upgradeable guests) and multi-tree support with owner/editor/viewer sharing
+- [edit-identity](edit-identity/spec.md) — edit a person's name, birth year, and death year from the panel, patching the already-rendered tree since it isn't deduped by person id

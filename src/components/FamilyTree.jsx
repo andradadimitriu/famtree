@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { buildFamilyTree } from '../data/familyGraph'
+import { formatPartialDate } from '../lib/partialDate'
 import PersonPanel from './PersonPanel'
 import './FamilyTree.css'
 
@@ -110,6 +111,25 @@ function hideSubtree(node, hiddenData) {
   node.children?.forEach((child) => hideSubtree(child, hiddenData))
 }
 
+// `familyGraph.js`'s output isn't deduped by person id — the same person
+// can appear as several independent node objects (themselves, a spouse's
+// own ancestor entry, etc.), so an edit has to patch every occurrence
+// rather than one. Walks collapsed branches too (`_children`/`_parents`),
+// so a later expand shows the correction instead of stale data. See
+// specs/edit-identity/spec.md.
+function patchPersonInTree(node, personId, updates) {
+  if (node.id === personId) Object.assign(node, updates)
+  ;(node.marriages ?? []).forEach((marriage) => {
+    if (marriage.spouse) patchPersonInTree(marriage.spouse, personId, updates)
+    ;(marriage.children ?? marriage._children ?? []).forEach((child) =>
+      patchPersonInTree(child, personId, updates),
+    )
+  })
+  ;(node.parents ?? node._parents ?? []).forEach((parent) =>
+    patchPersonInTree(parent, personId, updates),
+  )
+}
+
 function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) {
   return (
     <g
@@ -134,7 +154,7 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) 
       </text>
       {person.born && (
         <text className="node__meta" y={14} textAnchor="middle">
-          b. {person.born}
+          b. {formatPartialDate(person.born)}
         </text>
       )}
     </g>
@@ -366,6 +386,11 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     setVersion((v) => v + 1)
   }
 
+  const handlePersonUpdated = (personId, updates) => {
+    patchPersonInTree(rootDataRef.current, personId, updates)
+    setVersion((v) => v + 1)
+  }
+
   const handleToggleAncestors = (person) => {
     if (person.parents) {
       person._parents = person.parents
@@ -466,6 +491,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
         personId={selectedPersonId}
         details={selectedPersonId ? peopleDetails[selectedPersonId] : null}
         onClose={() => setSelectedPersonId(null)}
+        onPersonUpdated={handlePersonUpdated}
       />
       <div className="family-tree__viewport">
         <svg

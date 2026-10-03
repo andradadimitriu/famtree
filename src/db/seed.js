@@ -6,40 +6,40 @@ import { db } from './client.js'
 import { people, marriages, parentage } from './schema.js'
 
 const peopleData = {
-  'eleanor-whitfield': { name: 'Eleanor Whitfield', born: 1930 },
-  'henry-whitfield': { name: 'Henry Whitfield', born: 1928 },
+  'eleanor-whitfield': { name: 'Eleanor Whitfield', born: '1930' },
+  'henry-whitfield': { name: 'Henry Whitfield', born: '1928' },
 
-  'margaret-hayes': { name: 'Margaret Hayes', born: 1952 },
-  'david-hayes': { name: 'David Hayes', born: 1950 },
-  'walter-hayes': { name: 'Walter Hayes', born: 1922 },
-  'grace-hayes': { name: 'Grace Hayes', born: 1924 },
-  'arthur-bell': { name: 'Arthur Bell', born: 1898 },
+  'margaret-hayes': { name: 'Margaret Hayes', born: '1952' },
+  'david-hayes': { name: 'David Hayes', born: '1950' },
+  'walter-hayes': { name: 'Walter Hayes', born: '1922' },
+  'grace-hayes': { name: 'Grace Hayes', born: '1924' },
+  'arthur-bell': { name: 'Arthur Bell', born: '1898' },
 
-  'sophie-hayes': { name: 'Sophie Hayes', born: 1978 },
-  'marcus-cook': { name: 'Marcus Cook', born: 1977 },
-  'gordon-cook': { name: 'Gordon Cook', born: 1948 },
-  'liam-hayes-cook': { name: 'Liam Hayes-Cook', born: 2005 },
-  'ava-hayes-cook': { name: 'Ava Hayes-Cook', born: 2008 },
+  'sophie-hayes': { name: 'Sophie Hayes', born: '1978' },
+  'marcus-cook': { name: 'Marcus Cook', born: '1977' },
+  'gordon-cook': { name: 'Gordon Cook', born: '1948' },
+  'liam-hayes-cook': { name: 'Liam Hayes-Cook', born: '2005' },
+  'ava-hayes-cook': { name: 'Ava Hayes-Cook', born: '2008' },
 
-  'daniel-hayes': { name: 'Daniel Hayes', born: 1981 },
-  'rachel-hayes': { name: 'Rachel Hayes', born: 1983 },
-  'noah-hayes': { name: 'Noah Hayes', born: 2011 },
+  'daniel-hayes': { name: 'Daniel Hayes', born: '1981' },
+  'rachel-hayes': { name: 'Rachel Hayes', born: '1983' },
+  'noah-hayes': { name: 'Noah Hayes', born: '2011' },
 
-  'robert-whitfield': { name: 'Robert Whitfield', born: 1955 },
-  'susan-whitfield': { name: 'Susan Whitfield', born: 1957 },
-  'frank-doyle': { name: 'Frank Doyle', born: 1930 },
-  'helen-doyle': { name: 'Helen Doyle', born: 1932 },
-  'claire-whitfield': { name: 'Claire Whitfield', born: 1983 },
+  'robert-whitfield': { name: 'Robert Whitfield', born: '1955' },
+  'susan-whitfield': { name: 'Susan Whitfield', born: '1957' },
+  'frank-doyle': { name: 'Frank Doyle', born: '1930' },
+  'helen-doyle': { name: 'Helen Doyle', born: '1932' },
+  'claire-whitfield': { name: 'Claire Whitfield', born: '1983' },
 
-  'diane-whitfield': { name: 'Diane Whitfield', born: 1962 },
-  'james-whitfield': { name: 'James Whitfield', born: 1986 },
-  'laura-whitfield': { name: 'Laura Whitfield', born: 1988 },
-  'ella-whitfield': { name: 'Ella Whitfield', born: 2014 },
-  'mason-whitfield': { name: 'Mason Whitfield', born: 2016 },
+  'diane-whitfield': { name: 'Diane Whitfield', born: '1962' },
+  'james-whitfield': { name: 'James Whitfield', born: '1986' },
+  'laura-whitfield': { name: 'Laura Whitfield', born: '1988' },
+  'ella-whitfield': { name: 'Ella Whitfield', born: '2014' },
+  'mason-whitfield': { name: 'Mason Whitfield', born: '2016' },
 
-  'thomas-whitfield': { name: 'Thomas Whitfield', born: 1958 },
-  'patricia-whitfield': { name: 'Patricia Whitfield', born: 1960 },
-  'olivia-whitfield': { name: 'Olivia Whitfield', born: 1990 },
+  'thomas-whitfield': { name: 'Thomas Whitfield', born: '1958' },
+  'patricia-whitfield': { name: 'Patricia Whitfield', born: '1960' },
+  'olivia-whitfield': { name: 'Olivia Whitfield', born: '1990' },
 }
 
 const marriagesData = [

@@ -8,10 +8,34 @@ import { revalidatePath } from 'next/cache'
 import { db } from './client.js'
 import { people, photos } from './schema.js'
 import { savePhotoFile, deletePhotoFile } from '../storage/photos.js'
+import { parsePartialDate } from '../lib/partialDate.js'
 
 export async function updatePersonBio(personId, _prevState, formData) {
   const bio = formData.get('bio')?.toString() ?? ''
   db.update(people).set({ bio }).where(eq(people.id, personId)).run()
+  revalidatePath('/')
+  return { error: null }
+}
+
+// Name/born are also baked into FamilyTree.jsx's client-side hierarchy
+// data, which this write alone doesn't reach — the caller patches that
+// tree directly once this resolves. See specs/edit-identity/spec.md.
+export async function updatePersonIdentity(personId, _prevState, formData) {
+  const name = formData.get('name')?.toString().trim() ?? ''
+  if (!name) {
+    return { error: 'Name is required' }
+  }
+
+  const bornResult = parsePartialDate(formData.get('born'))
+  if (bornResult.error) return { error: bornResult.error }
+
+  const diedResult = parsePartialDate(formData.get('died'))
+  if (diedResult.error) return { error: diedResult.error }
+
+  db.update(people)
+    .set({ name, born: bornResult.value, died: diedResult.value })
+    .where(eq(people.id, personId))
+    .run()
   revalidatePath('/')
   return { error: null }
 }

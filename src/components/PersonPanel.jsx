@@ -19,7 +19,8 @@ import {
   Separator,
 } from '@mdxeditor/editor'
 import '@mdxeditor/editor/style.css'
-import { updatePersonBio, uploadPersonPhoto, deletePersonPhoto } from '../db/actions'
+import { updatePersonBio, updatePersonIdentity, uploadPersonPhoto, deletePersonPhoto } from '../db/actions'
+import { formatPartialDate, parsePartialDate } from '../lib/partialDate'
 import './PersonPanel.css'
 
 const noopAction = async (state) => state
@@ -34,13 +35,20 @@ const MAX_PANEL_WIDTH_RATIO = 0.7
 // person is selected. No backdrop/modal behavior — the tree behind it
 // stays fully visible and interactive; the panel only closes via the ×
 // button.
-export default function PersonPanel({ personId, details, onClose }) {
+export default function PersonPanel({ personId, details, onClose, onPersonUpdated }) {
   const isOpen = Boolean(personId)
 
   const [isEditingBio, setIsEditingBio] = useState(false)
   const editorRef = useRef(null)
   const [bioPending, setBioPending] = useState(false)
   const [bioError, setBioError] = useState(null)
+
+  const [isEditingIdentity, setIsEditingIdentity] = useState(false)
+  const [identityPending, setIdentityPending] = useState(false)
+  const [identityError, setIdentityError] = useState(null)
+  const [nameInput, setNameInput] = useState('')
+  const [bornInput, setBornInput] = useState('')
+  const [diedInput, setDiedInput] = useState('')
 
   // MDXEditor ships its own `dark-theme` class covering its full internal
   // palette (dialogs, hover/disabled states, etc. — well beyond the 4
@@ -97,6 +105,46 @@ export default function PersonPanel({ personId, details, onClose }) {
     setLastPersonId(personId)
     setIsEditingBio(false)
     setBioError(null)
+    setIsEditingIdentity(false)
+    setIdentityError(null)
+  }
+
+  function startEditingIdentity() {
+    setNameInput(details.name)
+    setBornInput(details.born ?? '')
+    setDiedInput(details.died ?? '')
+    setIdentityError(null)
+    setIsEditingIdentity(true)
+  }
+
+  async function handleSaveIdentity() {
+    if (!personId) return
+    setIdentityPending(true)
+    setIdentityError(null)
+    const formData = new FormData()
+    formData.set('name', nameInput)
+    formData.set('born', bornInput)
+    formData.set('died', diedInput)
+    const result = await updatePersonIdentity(personId, null, formData)
+    setIdentityPending(false)
+    if (result.error) {
+      setIdentityError(result.error)
+      return
+    }
+    setIsEditingIdentity(false)
+    onPersonUpdated(personId, {
+      name: nameInput.trim(),
+      born: parsePartialDate(bornInput).value ?? undefined,
+      died: parsePartialDate(diedInput).value ?? undefined,
+    })
+  }
+
+  // `(b. 1900, d. 1970)` — only the pieces that are actually set.
+  function formatLifespan({ born, died }) {
+    const parts = [born && `b. ${formatPartialDate(born)}`, died && `d. ${formatPartialDate(died)}`].filter(
+      Boolean,
+    )
+    return parts.length > 0 ? ` (${parts.join(', ')})` : ''
   }
 
   async function handleSaveBio() {
@@ -139,10 +187,73 @@ export default function PersonPanel({ personId, details, onClose }) {
           {details && (
             <>
               <div className="person-panel__header">
-                <h2>
-                  {details.name}
-                  {details.born ? ` (b. ${details.born})` : ''}
-                </h2>
+                {isEditingIdentity ? (
+                  <form
+                    className="person-panel__identity-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      handleSaveIdentity()
+                    }}
+                  >
+                    <label className="person-panel__field">
+                      <span>Name</span>
+                      <input
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label className="person-panel__field">
+                      <span>Born</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
+                        value={bornInput}
+                        onChange={(event) => setBornInput(event.target.value)}
+                      />
+                    </label>
+                    <label className="person-panel__field">
+                      <span>Died</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
+                        value={diedInput}
+                        onChange={(event) => setDiedInput(event.target.value)}
+                      />
+                    </label>
+                    {identityError && <p className="person-panel__error">{identityError}</p>}
+                    <div className="person-panel__form-actions">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingIdentity(false)}
+                        disabled={identityPending}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={identityPending}>
+                        {identityPending ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="person-panel__heading">
+                    <h2>
+                      {details.name}
+                      {formatLifespan(details)}
+                    </h2>
+                    <button
+                      type="button"
+                      className="person-panel__icon-button"
+                      aria-label="Edit name and birth year"
+                      onClick={startEditingIdentity}
+                    >
+                      ✎
+                    </button>
+                  </div>
+                )}
                 <button type="button" className="person-panel__close" onClick={onClose} aria-label="Close">
                   ×
                 </button>

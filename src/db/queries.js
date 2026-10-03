@@ -54,6 +54,7 @@ function getPeopleDetails(peopleRows) {
       {
         name: p.name,
         born: p.born ?? undefined,
+        died: p.died ?? undefined,
         bio: p.bio ?? '',
         photos: photosByPerson[p.id] ?? [],
       },

@@ -7,7 +7,10 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 export const people = sqliteTable('people', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  born: integer('born'),
+  // Partial-precision dates — "1930", "1930-06", or "1930-06-15" — see
+  // src/lib/partialDate.js.
+  born: text('born'),
+  died: text('died'),
   bio: text('bio'), // Markdown source — see specs/person-details/spec.md
 })
 
