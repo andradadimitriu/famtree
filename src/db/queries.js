@@ -11,7 +11,11 @@ import { people, marriages, parentage, photos } from './schema.js'
 // than a table — see specs/persistence/spec.md.
 export const rootId = 'eleanor-whitfield'
 
-export function getFamilyData() {
+// The people/marriages/parentage shape `buildFamilyTree` consumes — pulled
+// out so mutations in actions.js can hand the client the same shape back
+// after a structural edit (add/delete a person), without waiting on props
+// to refresh via Next's own revalidation. See specs/add-remove-people/spec.md.
+export function getTreeData() {
   const peopleRows = db.select().from(people).all()
   const marriageRows = db.select().from(marriages).all()
   const parentageRows = db.select().from(parentage).all()
@@ -28,6 +32,14 @@ export function getFamilyData() {
       marriageId: p.marriageId,
       childId: p.childId,
     })),
+  }
+}
+
+export function getFamilyData() {
+  const peopleRows = db.select().from(people).all()
+
+  return {
+    ...getTreeData(),
     rootId,
     peopleDetails: getPeopleDetails(peopleRows),
   }

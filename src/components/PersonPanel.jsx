@@ -19,7 +19,13 @@ import {
   Separator,
 } from '@mdxeditor/editor'
 import '@mdxeditor/editor/style.css'
-import { updatePersonBio, updatePersonIdentity, uploadPersonPhoto, deletePersonPhoto } from '../db/actions'
+import {
+  updatePersonBio,
+  updatePersonIdentity,
+  uploadPersonPhoto,
+  deletePersonPhoto,
+  deletePerson,
+} from '../db/actions'
 import { formatPartialDate, parsePartialDate } from '../lib/partialDate'
 import './PersonPanel.css'
 
@@ -35,8 +41,12 @@ const MAX_PANEL_WIDTH_RATIO = 0.7
 // person is selected. No backdrop/modal behavior — the tree behind it
 // stays fully visible and interactive; the panel only closes via the ×
 // button.
-export default function PersonPanel({ personId, details, onClose, onPersonUpdated }) {
+export default function PersonPanel({ personId, details, onClose, onPersonUpdated, onTreeMutated }) {
   const isOpen = Boolean(personId)
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deletePending, setDeletePending] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
 
   const [isEditingBio, setIsEditingBio] = useState(false)
   const editorRef = useRef(null)
@@ -107,6 +117,8 @@ export default function PersonPanel({ personId, details, onClose, onPersonUpdate
     setBioError(null)
     setIsEditingIdentity(false)
     setIdentityError(null)
+    setConfirmingDelete(false)
+    setDeleteError(null)
   }
 
   function startEditingIdentity() {
@@ -137,6 +149,21 @@ export default function PersonPanel({ personId, details, onClose, onPersonUpdate
       born: parsePartialDate(bornInput).value ?? undefined,
       died: parsePartialDate(diedInput).value ?? undefined,
     })
+  }
+
+  async function handleDeletePerson() {
+    if (!personId) return
+    setDeletePending(true)
+    setDeleteError(null)
+    const result = await deletePerson(personId)
+    setDeletePending(false)
+    if (result.error) {
+      setDeleteError(result.error)
+      return
+    }
+    setConfirmingDelete(false)
+    onTreeMutated(result)
+    onClose()
   }
 
   // `(b. 1900, d. 1970)` — only the pieces that are actually set.
@@ -354,6 +381,43 @@ export default function PersonPanel({ personId, details, onClose, onPersonUpdate
                   </button>
                 </form>
                 {uploadState.error && <p className="person-panel__error">{uploadState.error}</p>}
+              </section>
+
+              <section className="person-panel__section">
+                <h3>Actions</h3>
+                {confirmingDelete ? (
+                  <div className="person-panel__delete-confirm">
+                    <p>Delete {details.name}? This can&apos;t be undone.</p>
+                    {deleteError && <p className="person-panel__error">{deleteError}</p>}
+                    <div className="person-panel__form-actions">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDelete(false)}
+                        disabled={deletePending}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="person-panel__danger-button"
+                        onClick={handleDeletePerson}
+                        disabled={deletePending}
+                      >
+                        {deletePending ? 'Deleting…' : 'Confirm delete'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="person-panel__actions-buttons">
+                    <button
+                      type="button"
+                      className="person-panel__danger-button"
+                      onClick={() => setConfirmingDelete(true)}
+                    >
+                      Delete node
+                    </button>
+                  </div>
+                )}
               </section>
             </>
           )}

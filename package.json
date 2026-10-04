@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "oxlint",
+    "test": "node --test src/**/*.test.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node src/db/seed.js"

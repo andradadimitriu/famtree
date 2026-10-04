@@ -161,6 +161,28 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) 
   )
 }
 
+// Stand-in card for a marriage's unrecorded spouse (`marriages.spouse2Id`
+// is null) — only rendered where that marriage actually has children to
+// show, so a plain remarriage-less, childless record doesn't grow a
+// placeholder nobody asked for. Not clickable — there's no person behind it.
+function UnknownPersonCard({ x, y = 0 }) {
+  return (
+    <g transform={`translate(${x}, ${y})`} className="node__person node__person--unknown">
+      <rect
+        className="node__card node__card--unknown"
+        x={-CARD_WIDTH / 2}
+        y={-CARD_HEIGHT / 2}
+        width={CARD_WIDTH}
+        height={CARD_HEIGHT}
+        rx={8}
+      />
+      <text className="node__name node__name--unknown" y={-6} textAnchor="middle">
+        Unknown
+      </text>
+    </g>
+  )
+}
+
 // Renders a person's parents as a small pair above their card, joined by
 // the same marriage-dot connector style used for spouses, recursing
 // upward for grandparents-in-law. This is *not* part of the d3.hierarchy
@@ -196,8 +218,11 @@ function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
         (() => {
           const parents = person.parents
           const parentY = y - NODE_HEIGHT
-          const positions =
-            parents.length === 2 ? [x - STEP / 2, x + STEP / 2] : [x]
+          // A marriage record always has at least one known spouse (see
+          // schema.js) — one recorded parent still means a couple, just
+          // with the other slot unrecorded, so this always lays out as a
+          // pair rather than centering a lone card.
+          const positions = [x - STEP / 2, x + STEP / 2]
 
           return (
             <>
@@ -208,36 +233,50 @@ function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
                 y1={parentY}
                 y2={cardTopY}
               />
-              {parents.length === 2 && (
-                <>
-                  <line
-                    className="node__marriage-line"
-                    x1={positions[0] + CARD_WIDTH / 2}
-                    x2={positions[1] - CARD_WIDTH / 2}
-                    y1={parentY}
-                    y2={parentY}
-                  />
-                  <circle className="node__marriage" cx={x} cy={parentY} r={5} />
-                </>
-              )}
-              {parents.map((parent, i) => (
-                <g key={i}>
+              <line
+                className="node__marriage-line"
+                x1={positions[0] + CARD_WIDTH / 2}
+                x2={positions[1] - CARD_WIDTH / 2}
+                y1={parentY}
+                y2={parentY}
+              />
+              <circle className="node__marriage" cx={x} cy={parentY} r={5} />
+              <g>
+                <PersonCard
+                  person={parents[0]}
+                  x={positions[0]}
+                  y={parentY}
+                  isAncestor
+                  onSelectPerson={onSelectPerson}
+                />
+                <AncestorStack
+                  person={parents[0]}
+                  x={positions[0]}
+                  y={parentY}
+                  onToggle={onToggle}
+                  onSelectPerson={onSelectPerson}
+                />
+              </g>
+              {parents.length === 2 ? (
+                <g>
                   <PersonCard
-                    person={parent}
-                    x={positions[i]}
+                    person={parents[1]}
+                    x={positions[1]}
                     y={parentY}
                     isAncestor
                     onSelectPerson={onSelectPerson}
                   />
                   <AncestorStack
-                    person={parent}
-                    x={positions[i]}
+                    person={parents[1]}
+                    x={positions[1]}
                     y={parentY}
                     onToggle={onToggle}
                     onSelectPerson={onSelectPerson}
                   />
                 </g>
-              ))}
+              ) : (
+                <UnknownPersonCard x={positions[1]} y={parentY} />
+              )}
             </>
           )
         })()}
@@ -279,7 +318,12 @@ function FamilyNode({
       {marriages.map((marriage, i) => {
         const hasChildren = Boolean(marriage.children || marriage._children)
         const isCollapsed = Boolean(marriage._children)
-        const connX = marriage.spouse ? connectorX(i) : 0
+        // A marriage with no recorded spouse but recorded children still
+        // gets the couple's connector/placeholder treatment (see
+        // UnknownPersonCard) — only a childless unrecorded-spouse marriage
+        // renders as if it were just the one person, with nothing to connect.
+        const showUnion = Boolean(marriage.spouse) || hasChildren
+        const connX = showUnion ? connectorX(i) : 0
 
         return (
           <g
@@ -287,7 +331,7 @@ function FamilyNode({
             className={`node__union${hasChildren ? ' node__union--interactive' : ''}`}
             onClick={hasChildren ? () => onToggleMarriage(node, i) : undefined}
           >
-            {marriage.spouse && (
+            {showUnion && (
               <line
                 className="node__marriage-line"
                 x1={unionSide(i) * (CARD_WIDTH / 2)}
@@ -296,7 +340,7 @@ function FamilyNode({
                 y2={0}
               />
             )}
-            {marriage.spouse && (
+            {showUnion && (
               <circle className="node__marriage" cx={connX} cy={0} r={5} />
             )}
             {hasChildren && (
@@ -333,9 +377,9 @@ function FamilyNode({
         onToggle={onToggleAncestors}
         onSelectPerson={onSelectPerson}
       />
-      {marriages.map(
-        (marriage, i) =>
-          marriage.spouse && (
+      {marriages.map((marriage, i) => {
+        if (marriage.spouse) {
+          return (
             <g key={i}>
               <PersonCard
                 person={marriage.spouse}
@@ -351,8 +395,11 @@ function FamilyNode({
                 onSelectPerson={onSelectPerson}
               />
             </g>
-          ),
-      )}
+          )
+        }
+        const hasChildren = Boolean(marriage.children || marriage._children)
+        return hasChildren ? <UnknownPersonCard key={i} x={spouseCenterX(i)} /> : null
+      })}
     </g>
   )
 }
@@ -388,6 +435,22 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
 
   const handlePersonUpdated = (personId, updates) => {
     patchPersonInTree(rootDataRef.current, personId, updates)
+    setVersion((v) => v + 1)
+  }
+
+  // Structural edits (deleting a person, and eventually adding one) can't
+  // be patched in place like a field edit — a person can vanish from
+  // several spots at once (themselves, a spouse's ancestor stack, etc.) or
+  // the shape around them changes entirely. Simplest correct fix: rebuild
+  // the whole tree from the fresh data the mutation handed back, same as
+  // the initial build. This does reset every expand/collapse toggle to the
+  // default collapsed-at-depth-1 state — an accepted tradeoff for a
+  // structural change, unlike `patchPersonInTree`'s field-only patching.
+  // See specs/add-remove-people/spec.md.
+  const handleTreeMutated = ({ people: freshPeople, marriages: freshMarriages, parentage: freshParentage }) => {
+    const data = buildFamilyTree(freshPeople, freshMarriages, freshParentage, rootId)
+    collapseBelowDepth(data, 1)
+    rootDataRef.current = data
     setVersion((v) => v + 1)
   }
 
@@ -492,6 +555,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
         details={selectedPersonId ? peopleDetails[selectedPersonId] : null}
         onClose={() => setSelectedPersonId(null)}
         onPersonUpdated={handlePersonUpdated}
+        onTreeMutated={handleTreeMutated}
       />
       <div className="family-tree__viewport">
         <svg

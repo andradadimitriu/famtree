@@ -81,6 +81,18 @@
   fill: var(--color-surface-muted);
 }
 
+.node__card--unknown {
+  fill: var(--color-surface-muted);
+  stroke: var(--color-text-faint);
+  stroke-dasharray: 3 3;
+}
+
+.node__name--unknown {
+  fill: var(--color-text-faint);
+  font-style: italic;
+  font-weight: 400;
+}
+
 .node__toggle--interactive {
   cursor: pointer;
 }

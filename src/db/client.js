@@ -4,7 +4,9 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema.js'
 
-export const DB_PATH = path.join(process.cwd(), 'data', 'famtree.db')
+// Overridable so tests can point this at a disposable temp file instead of
+// the real dev database — see src/db/actions.test.js.
+export const DB_PATH = process.env.FAMTREE_DB_PATH ?? path.join(process.cwd(), 'data', 'famtree.db')
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
 
