@@ -10,20 +10,101 @@
 }
 
 /* The panel is a real flex sibling (see PersonPanel.css), not an overlay,
-   so this viewport only gets whatever width is left beside it — the SVG
-   (max-width: 100%) reflows to fit, rather than being covered. */
+   so this viewport only gets whatever width is left beside it, filling it
+   completely (no align-items override — stretch is the flex default).
+   Column so the "Create person" toolbar stacks under the SVG; both are
+   full-width so each can center its own content independently, and the
+   whole thing scrolls together when the tree overflows. */
 .family-tree__viewport {
   flex: 1;
   min-width: 0;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
   overflow: auto;
 }
 
+/* Stretched full-width by the viewport's default align-items — centered
+   with auto margins instead of align-self so it isn't forced edge-to-edge
+   itself, since a replaced element with an intrinsic aspect ratio (the
+   viewBox) can't be stretched to fill like the toolbar below it can. */
 .family-tree__svg {
+  flex-shrink: 0;
   max-width: 100%;
   height: auto;
+  margin: 0 auto;
+}
+
+/* `margin-top: auto` claims all the viewport's leftover vertical space, so
+   this sits at the very end of the viewport (flush with its bottom edge)
+   whenever the tree is shorter than the available area, rather than
+   floating directly under a short tree with blank space beneath it. Once
+   the tree is tall enough to need scrolling, it falls back to sitting
+   right after the tree, same as any other block in flow. */
+.family-tree__toolbar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding: 0.75rem 0;
+}
+
+.family-tree__create-button {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-radius: 6px;
+  padding: 0.4rem 1rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.family-tree__create-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.family-tree__create-form input {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.family-tree__create-form .family-tree__input-name {
+  width: 12rem;
+}
+
+.family-tree__create-form .family-tree__input-born,
+.family-tree__create-form .family-tree__input-died {
+  width: 9rem;
+}
+
+.family-tree__create-form button {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.family-tree__create-form button[type='submit'] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.family-tree__create-error {
+  width: 100%;
+  text-align: center;
+  color: var(--color-error);
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .link {

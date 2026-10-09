@@ -25,8 +25,10 @@ import {
   uploadPersonPhoto,
   deletePersonPhoto,
   deletePerson,
+  linkPerson,
 } from '../db/actions'
 import { formatPartialDate, parsePartialDate } from '../lib/partialDate'
+import { getParentState, findMarriage } from '../lib/parentState'
 import './PersonPanel.css'
 
 const noopAction = async (state) => state
@@ -41,12 +43,31 @@ const MAX_PANEL_WIDTH_RATIO = 0.7
 // person is selected. No backdrop/modal behavior — the tree behind it
 // stays fully visible and interactive; the panel only closes via the ×
 // button.
-export default function PersonPanel({ personId, details, onClose, onPersonUpdated, onTreeMutated }) {
+export default function PersonPanel({
+  personId,
+  details,
+  people,
+  marriages,
+  parentage,
+  onClose,
+  onPersonUpdated,
+  onTreeMutated,
+}) {
   const isOpen = Boolean(personId)
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deletePending, setDeletePending] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
+
+  const [isLinking, setIsLinking] = useState(false)
+  const [linkPending, setLinkPending] = useState(false)
+  const [linkError, setLinkError] = useState(null)
+  const [relationship, setRelationship] = useState('')
+  const [parent1Id, setParent1Id] = useState('')
+  const [parent2Id, setParent2Id] = useState('')
+  const [otherParentId, setOtherParentId] = useState('')
+  const [childId, setChildId] = useState('')
+  const [spouseId, setSpouseId] = useState('')
 
   const [isEditingBio, setIsEditingBio] = useState(false)
   const editorRef = useRef(null)
@@ -119,6 +140,85 @@ export default function PersonPanel({ personId, details, onClose, onPersonUpdate
     setIdentityError(null)
     setConfirmingDelete(false)
     setDeleteError(null)
+    setIsLinking(false)
+    setLinkError(null)
+  }
+
+  // All people except the one whose panel this is — a person can't be
+  // linked to themselves. Sorted by name for a stable, scannable dropdown.
+  const peopleList = Object.entries(people ?? {})
+    .filter(([id]) => id !== personId)
+    .map(([id, p]) => ({ id, ...p }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const selfParentState = getParentState(personId, marriages ?? [], parentage ?? [])
+
+  // `people` only carries `born` (see queries.js's getTreeData), not
+  // `died` — enough to tell two same-named people apart in a dropdown.
+  function personLabel(p) {
+    return p.born ? `${p.name} (b. ${formatPartialDate(p.born)})` : p.name
+  }
+
+  function resetLinkFields() {
+    setRelationship('')
+    setParent1Id('')
+    setParent2Id('')
+    setOtherParentId('')
+    setChildId('')
+    setSpouseId('')
+    setLinkError(null)
+  }
+
+  function startLinking() {
+    resetLinkFields()
+    setIsLinking(true)
+  }
+
+  function handleRelationshipChange(value) {
+    setRelationship(value)
+    setParent1Id('')
+    setParent2Id('')
+    setOtherParentId('')
+    setChildId('')
+    setSpouseId('')
+    setLinkError(null)
+  }
+
+  function canSubmitLink() {
+    if (relationship === 'child-of') {
+      return selfParentState.state === 'none' ? Boolean(parent1Id) : Boolean(otherParentId)
+    }
+    if (relationship === 'parent-of') return Boolean(childId)
+    if (relationship === 'spouse-of') return Boolean(spouseId)
+    return false
+  }
+
+  async function handleSaveLink() {
+    if (!personId) return
+    setLinkPending(true)
+    setLinkError(null)
+    const formData = new FormData()
+    formData.set('relationship', relationship)
+    if (relationship === 'child-of') {
+      if (selfParentState.state === 'none') {
+        formData.set('parent1Id', parent1Id)
+        if (parent2Id) formData.set('parent2Id', parent2Id)
+      } else {
+        formData.set('otherParentId', otherParentId)
+      }
+    } else if (relationship === 'parent-of') {
+      formData.set('childId', childId)
+    } else if (relationship === 'spouse-of') {
+      formData.set('spouseId', spouseId)
+    }
+    const result = await linkPerson(personId, null, formData)
+    setLinkPending(false)
+    if (result.error) {
+      setLinkError(result.error)
+      return
+    }
+    setIsLinking(false)
+    onTreeMutated(result)
   }
 
   function startEditingIdentity() {
@@ -407,8 +507,128 @@ export default function PersonPanel({ personId, details, onClose, onPersonUpdate
                       </button>
                     </div>
                   </div>
+                ) : isLinking ? (
+                  <form
+                    className="person-panel__link-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      handleSaveLink()
+                    }}
+                  >
+                    <label className="person-panel__field">
+                      <span>Relationship</span>
+                      <select
+                        value={relationship}
+                        onChange={(event) => handleRelationshipChange(event.target.value)}
+                      >
+                        <option value="">Choose…</option>
+                        <option value="child-of" disabled={selfParentState.state === 'two'}>
+                          Child of{selfParentState.state === 'two' ? ' — already has 2 parents' : ''}
+                        </option>
+                        <option value="parent-of">Parent of</option>
+                        <option value="spouse-of">Spouse of</option>
+                      </select>
+                    </label>
+
+                    {relationship === 'child-of' && selfParentState.state === 'none' && (
+                      <>
+                        <label className="person-panel__field">
+                          <span>Parent 1</span>
+                          <select value={parent1Id} onChange={(event) => setParent1Id(event.target.value)}>
+                            <option value="">Choose…</option>
+                            {peopleList
+                              .filter((p) => p.id !== parent2Id)
+                              .map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {personLabel(p)}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label className="person-panel__field">
+                          <span>Parent 2</span>
+                          <select value={parent2Id} onChange={(event) => setParent2Id(event.target.value)}>
+                            <option value="">Unknown</option>
+                            {peopleList
+                              .filter((p) => p.id !== parent1Id)
+                              .map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {personLabel(p)}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </>
+                    )}
+
+                    {relationship === 'child-of' && selfParentState.state === 'one' && (
+                      <label className="person-panel__field">
+                        <span>Other parent</span>
+                        <select
+                          value={otherParentId}
+                          onChange={(event) => setOtherParentId(event.target.value)}
+                        >
+                          <option value="">Choose…</option>
+                          {peopleList
+                            .filter((p) => p.id !== selfParentState.knownParentId)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {personLabel(p)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {relationship === 'parent-of' && (
+                      <label className="person-panel__field">
+                        <span>Child</span>
+                        <select value={childId} onChange={(event) => setChildId(event.target.value)}>
+                          <option value="">Choose…</option>
+                          {peopleList
+                            .filter(
+                              (p) => getParentState(p.id, marriages ?? [], parentage ?? []).state !== 'two',
+                            )
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {personLabel(p)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {relationship === 'spouse-of' && (
+                      <label className="person-panel__field">
+                        <span>Spouse</span>
+                        <select value={spouseId} onChange={(event) => setSpouseId(event.target.value)}>
+                          <option value="">Choose…</option>
+                          {peopleList
+                            .filter((p) => !findMarriage(marriages ?? [], personId, p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {personLabel(p)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {linkError && <p className="person-panel__error">{linkError}</p>}
+                    <div className="person-panel__form-actions">
+                      <button type="button" onClick={() => setIsLinking(false)} disabled={linkPending}>
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={linkPending || !canSubmitLink()}>
+                        {linkPending ? 'Linking…' : 'Save'}
+                      </button>
+                    </div>
+                  </form>
                 ) : (
                   <div className="person-panel__actions-buttons">
+                    <button type="button" className="person-panel__secondary-button" onClick={startLinking}>
+                      Link to
+                    </button>
                     <button
                       type="button"
                       className="person-panel__danger-button"

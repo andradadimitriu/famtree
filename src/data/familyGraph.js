@@ -108,3 +108,16 @@ export function buildFamilyTree(people, marriages, parentage, rootId) {
   collapseAncestors(root)
   return root
 }
+
+// Anyone with no marriage and no parentage record at all — unreachable by
+// walking the hierarchy from any root, since that walk only ever follows
+// those two relationships. A freshly created person (no relationships yet)
+// always falls in here. See specs/add-remove-people/spec.md.
+export function findUnlinkedPeople(people, marriages, parentage) {
+  const linked = new Set()
+  marriages.forEach((marriage) => marriage.spouses.forEach((id) => linked.add(id)))
+  parentage.forEach(({ childId }) => linked.add(childId))
+  return Object.entries(people)
+    .filter(([id]) => !linked.has(id))
+    .map(([id, person]) => ({ id, name: person.name, born: person.born }))
+}

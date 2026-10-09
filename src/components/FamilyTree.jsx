@@ -2,8 +2,9 @@
 
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
-import { buildFamilyTree } from '../data/familyGraph'
+import { buildFamilyTree, findUnlinkedPeople } from '../data/familyGraph'
 import { formatPartialDate } from '../lib/partialDate'
+import { createPerson } from '../db/actions'
 import PersonPanel from './PersonPanel'
 import './FamilyTree.css'
 
@@ -42,6 +43,10 @@ const COUSIN_GAP = NODE_WIDTH * 2 - CARD_WIDTH
 const UNION_TOGGLE_OFFSET = 14
 const UNION_TOGGLE_RADIUS = 9
 const BOTTOM_MARGIN = CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET + UNION_TOGGLE_RADIUS
+
+// Vertical gap between the bottom of the real hierarchy and the row of
+// unlinked people rendered below it (see `findUnlinkedPeople`).
+const ORPHAN_ROW_GAP = NODE_HEIGHT * 0.75
 
 function personHalfWidth(marriages) {
   const half = CARD_WIDTH / 2
@@ -406,10 +411,12 @@ function FamilyNode({
 
 export default function FamilyTree({ people, marriages, parentage, rootId, peopleDetails }) {
   const rootDataRef = useRef(null)
+  const orphansRef = useRef(null)
   if (!rootDataRef.current) {
     const data = buildFamilyTree(people, marriages, parentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
+    orphansRef.current = findUnlinkedPeople(people, marriages, parentage)
   }
 
   const [version, setVersion] = useState(0)
@@ -451,7 +458,36 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     const data = buildFamilyTree(freshPeople, freshMarriages, freshParentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
+    orphansRef.current = findUnlinkedPeople(freshPeople, freshMarriages, freshParentage)
     setVersion((v) => v + 1)
+  }
+
+  const [isCreatingPerson, setIsCreatingPerson] = useState(false)
+  const [createPending, setCreatePending] = useState(false)
+  const [createError, setCreateError] = useState(null)
+  const [newPersonName, setNewPersonName] = useState('')
+  const [newPersonBorn, setNewPersonBorn] = useState('')
+  const [newPersonDied, setNewPersonDied] = useState('')
+
+  async function handleCreatePerson(event) {
+    event.preventDefault()
+    setCreatePending(true)
+    setCreateError(null)
+    const formData = new FormData()
+    formData.set('name', newPersonName)
+    formData.set('born', newPersonBorn)
+    formData.set('died', newPersonDied)
+    const result = await createPerson(null, formData)
+    setCreatePending(false)
+    if (result.error) {
+      setCreateError(result.error)
+      return
+    }
+    handleTreeMutated(result)
+    setNewPersonName('')
+    setNewPersonBorn('')
+    setNewPersonDied('')
+    setIsCreatingPerson(false)
   }
 
   const handleToggleAncestors = (person) => {
@@ -487,7 +523,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     setVersion((v) => v + 1)
   }
 
-  const { nodes, links, width, height, offsetX, topMargin } = useMemo(() => {
+  const { nodes, links, orphanNodes, width, height, offsetX, topMargin } = useMemo(() => {
     const root = d3.hierarchy(rootDataRef.current, childrenAccessor)
     d3
       .tree()
@@ -528,14 +564,35 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
       })
     })
 
+    // People with no marriage/parentage record at all aren't reachable
+    // from the root, so they sit outside the d3.hierarchy layout above —
+    // laid out here instead as their own row, centered below the tree.
+    const orphans = orphansRef.current ?? []
+    const orphanRowWidth = orphans.length * NODE_WIDTH
+    const treeMidX = (minX + maxX) / 2
+    const orphanRowMinX = treeMidX - orphanRowWidth / 2
+    const orphanY = maxY + NODE_HEIGHT + ORPHAN_ROW_GAP
+    const orphanNodes = orphans.map((person, i) => ({
+      person,
+      x: orphanRowMinX + i * NODE_WIDTH + NODE_WIDTH / 2,
+      y: orphanY,
+    }))
+
+    const fullMinX = Math.min(minX, orphanRowMinX)
+    const fullMaxX = Math.max(maxX, orphanRowMinX + orphanRowWidth)
+    const treeHeight = maxY + NODE_HEIGHT / 2 + BOTTOM_MARGIN + maxAncestorDepth * NODE_HEIGHT
+    const fullHeight =
+      orphans.length > 0 ? Math.max(treeHeight, orphanY + NODE_HEIGHT / 2 + BOTTOM_MARGIN) : treeHeight
+
     return {
       nodes: descendants.filter((d) => !hiddenData.has(d.data)),
       links: root
         .links()
         .filter((link) => !hiddenData.has(link.source.data) && !hiddenData.has(link.target.data)),
-      width: maxX - minX,
-      height: maxY + NODE_HEIGHT / 2 + BOTTOM_MARGIN + maxAncestorDepth * NODE_HEIGHT,
-      offsetX: -minX,
+      orphanNodes,
+      width: fullMaxX - fullMinX,
+      height: fullHeight,
+      offsetX: -fullMinX,
       topMargin,
     }
     // `version` is the re-render trigger: toggling a node mutates the plain
@@ -553,6 +610,9 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
       <PersonPanel
         personId={selectedPersonId}
         details={selectedPersonId ? peopleDetails[selectedPersonId] : null}
+        people={people}
+        marriages={marriages}
+        parentage={parentage}
         onClose={() => setSelectedPersonId(null)}
         onPersonUpdated={handlePersonUpdated}
         onTreeMutated={handleTreeMutated}
@@ -594,8 +654,60 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
                 onSelectPerson={setSelectedPersonId}
               />
             ))}
+            {orphanNodes.map(({ person, x, y }) => (
+              <PersonCard key={person.id} person={person} x={x} y={y} onSelectPerson={setSelectedPersonId} />
+            ))}
           </g>
         </svg>
+        <div className="family-tree__toolbar">
+          {isCreatingPerson ? (
+            <form className="family-tree__create-form" onSubmit={handleCreatePerson}>
+              <input
+                type="text"
+                className="family-tree__input-name"
+                placeholder="Name"
+                value={newPersonName}
+                onChange={(event) => setNewPersonName(event.target.value)}
+                required
+                autoFocus
+              />
+              <input
+                type="text"
+                className="family-tree__input-born"
+                inputMode="numeric"
+                placeholder="Born (optional)"
+                value={newPersonBorn}
+                onChange={(event) => setNewPersonBorn(event.target.value)}
+              />
+              <input
+                type="text"
+                className="family-tree__input-died"
+                inputMode="numeric"
+                placeholder="Died (optional)"
+                value={newPersonDied}
+                onChange={(event) => setNewPersonDied(event.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatingPerson(false)
+                  setCreateError(null)
+                }}
+                disabled={createPending}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={createPending}>
+                {createPending ? 'Creating…' : 'Create'}
+              </button>
+              {createError && <p className="family-tree__create-error">{createError}</p>}
+            </form>
+          ) : (
+            <button type="button" className="family-tree__create-button" onClick={() => setIsCreatingPerson(true)}>
+              + Create person
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

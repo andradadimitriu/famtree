@@ -82,7 +82,8 @@
   color: var(--color-text-muted);
 }
 
-.person-panel__field input {
+.person-panel__field input,
+.person-panel__field select {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.3rem 0.5rem;
@@ -90,6 +91,12 @@
   color: var(--color-text);
   font: inherit;
   font-size: 0.95rem;
+}
+
+.person-panel__link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .person-panel__close {
@@ -302,10 +309,26 @@
   cursor: pointer;
 }
 
+/* Column, not row — "Link to" sits visibly above "Delete node", per
+   specs/link-relationships/spec.md, rather than side by side. */
 .person-panel__actions-buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.5rem;
+}
+
+.person-panel__secondary-button {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.person-panel__secondary-button:hover {
+  border-color: var(--color-accent);
 }
 
 .person-panel__delete-confirm p {

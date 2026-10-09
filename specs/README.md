@@ -16,3 +16,4 @@ as a feature grows.
 - [bio-editor](bio-editor/spec.md) — replace the raw-Markdown textarea with MDXEditor, a WYSIWYG editor, for the bio edit mode
 - [accounts-and-trees](accounts-and-trees/spec.md) — user accounts (email+password, Google, silent upgradeable guests) and multi-tree support with owner/editor/viewer sharing
 - [edit-identity](edit-identity/spec.md) — edit a person's name, birth year, and death year from the panel, patching the already-rendered tree since it isn't deduped by person id
+- [link-relationships](link-relationships/spec.md) — "Link to" control in the panel's Actions section to connect two existing people as child-of/parent-of/spouse-of
