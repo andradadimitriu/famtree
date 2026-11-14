@@ -12,6 +12,46 @@ import { parsePartialDate } from '../lib/partialDate.js'
 import { getParentState, findMarriage, findIncompleteMarriage, marriageHasChildren } from '../lib/parentState.js'
 import { getTreeData, rootId } from './queries.js'
 
+// Composite ids (`spouse1Id-spouse2Id`) match the sample data's own
+// convention — see specs/people-and-relationships/spec.md. A collision
+// (two different marriages that would compute the same base id) is an
+// accepted rough edge elsewhere in this codebase; disambiguated here
+// with a numeric suffix rather than left to silently clash. Shared by
+// linkPerson and unlinkPerson — both create or reuse an incomplete
+// marriage the same way.
+function makeMarriageId(marriageRows, spouse1Id, spouse2Id) {
+  const base = `${spouse1Id}-${spouse2Id ?? 'unknown'}`
+  let id = base
+  let suffix = 2
+  while (marriageRows.some((m) => m.id === id)) {
+    id = `${base}-${suffix}`
+    suffix += 1
+  }
+  return id
+}
+
+function createMarriage(marriageRows, spouse1Id, spouse2Id) {
+  const id = makeMarriageId(marriageRows, spouse1Id, spouse2Id)
+  db.insert(marriages).values({ id, spouse1Id, spouse2Id: spouse2Id ?? null }).run()
+  return id
+}
+
+function fillGap(marriageId, spouseId) {
+  db.update(marriages).set({ spouse2Id: spouseId }).where(eq(marriages.id, marriageId)).run()
+}
+
+// A person has at most one parentage row as a child (see
+// specs/people-and-relationships/spec.md), so this is always either a
+// fresh insert or a reassignment of that one existing row.
+function setChildMarriage(parentageRows, childId, marriageId) {
+  const hasExisting = parentageRows.some((p) => p.childId === childId)
+  if (hasExisting) {
+    db.update(parentage).set({ marriageId }).where(eq(parentage.childId, childId)).run()
+  } else {
+    db.insert(parentage).values({ marriageId, childId }).run()
+  }
+}
+
 export async function updatePersonBio(personId, _prevState, formData) {
   const bio = formData.get('bio')?.toString() ?? ''
   db.update(people).set({ bio }).where(eq(people.id, personId)).run()
@@ -86,9 +126,10 @@ export async function deletePersonPhoto(photoId) {
 }
 
 // Inserts a standalone person with no marriages/parentage — the family
-// tree renders anyone not reachable from the root as a loose card below
-// everyone else (see `findUnlinkedPeople`), so a brand-new person shows up
-// immediately without needing to be linked to anyone first. See
+// tree renders anyone not reachable from the root as their own small tree
+// below everyone else (see `findDisconnectedRoots`), so a brand-new
+// person shows up immediately without needing to be linked to anyone
+// first. See
 // specs/add-remove-people/spec.md.
 export async function createPerson(_prevState, formData) {
   const name = formData.get('name')?.toString().trim() ?? ''
@@ -191,44 +232,6 @@ export async function linkPerson(personId, _prevState, formData) {
 
   const personExists = (id) => Boolean(id) && id in treeData.people
 
-  // Composite ids (`parent1Id-parent2Id`) match the sample data's own
-  // convention — see specs/people-and-relationships/spec.md. A collision
-  // (two different marriages that would compute the same base id) is an
-  // accepted rough edge elsewhere in this codebase; disambiguated here
-  // with a numeric suffix rather than left to silently clash.
-  function makeMarriageId(spouse1Id, spouse2Id) {
-    const base = `${spouse1Id}-${spouse2Id ?? 'unknown'}`
-    let id = base
-    let suffix = 2
-    while (marriageRows.some((m) => m.id === id)) {
-      id = `${base}-${suffix}`
-      suffix += 1
-    }
-    return id
-  }
-
-  function createMarriage(spouse1Id, spouse2Id) {
-    const id = makeMarriageId(spouse1Id, spouse2Id)
-    db.insert(marriages).values({ id, spouse1Id, spouse2Id: spouse2Id ?? null }).run()
-    return id
-  }
-
-  function fillGap(marriageId, spouseId) {
-    db.update(marriages).set({ spouse2Id: spouseId }).where(eq(marriages.id, marriageId)).run()
-  }
-
-  // A person has at most one parentage row as a child (see
-  // specs/people-and-relationships/spec.md), so this is always either a
-  // fresh insert or a reassignment of that one existing row.
-  function setChildMarriage(childId, marriageId) {
-    const hasExisting = parentageRows.some((p) => p.childId === childId)
-    if (hasExisting) {
-      db.update(parentage).set({ marriageId }).where(eq(parentage.childId, childId)).run()
-    } else {
-      db.insert(parentage).values({ marriageId, childId }).run()
-    }
-  }
-
   if (relationship === 'child-of') {
     const state = getParentState(personId, marriageRows, parentageRows)
     if (state.state === 'two') {
@@ -248,12 +251,12 @@ export async function linkPerson(personId, _prevState, formData) {
       let marriageId
       if (parent2Id) {
         const existing = findMarriage(marriageRows, parent1Id, parent2Id)
-        marriageId = existing ? existing.id : createMarriage(parent1Id, parent2Id)
+        marriageId = existing ? existing.id : createMarriage(marriageRows, parent1Id, parent2Id)
       } else {
         const existing = findIncompleteMarriage(marriageRows, parent1Id)
-        marriageId = existing ? existing.id : createMarriage(parent1Id, null)
+        marriageId = existing ? existing.id : createMarriage(marriageRows, parent1Id, null)
       }
-      setChildMarriage(personId, marriageId)
+      setChildMarriage(parentageRows, personId, marriageId)
     } else {
       const otherParentId = formData.get('otherParentId')?.toString() ?? ''
       const knownParentId = state.knownParentId
@@ -263,11 +266,11 @@ export async function linkPerson(personId, _prevState, formData) {
 
       const existingPair = findMarriage(marriageRows, knownParentId, otherParentId)
       if (existingPair) {
-        setChildMarriage(personId, existingPair.id)
+        setChildMarriage(parentageRows, personId, existingPair.id)
       } else if (!marriageHasChildren(state.marriageId, parentageRows, personId)) {
         fillGap(state.marriageId, otherParentId)
       } else {
-        setChildMarriage(personId, createMarriage(knownParentId, otherParentId))
+        setChildMarriage(parentageRows, personId, createMarriage(marriageRows, knownParentId, otherParentId))
       }
     }
   } else if (relationship === 'parent-of') {
@@ -283,7 +286,7 @@ export async function linkPerson(personId, _prevState, formData) {
 
     if (state.state === 'none') {
       const existing = findIncompleteMarriage(marriageRows, personId)
-      setChildMarriage(childId, existing ? existing.id : createMarriage(personId, null))
+      setChildMarriage(parentageRows, childId, existing ? existing.id : createMarriage(marriageRows, personId, null))
     } else {
       const knownParentId = state.knownParentId
       if (knownParentId === personId) {
@@ -292,11 +295,11 @@ export async function linkPerson(personId, _prevState, formData) {
 
       const existingPair = findMarriage(marriageRows, knownParentId, personId)
       if (existingPair) {
-        setChildMarriage(childId, existingPair.id)
+        setChildMarriage(parentageRows, childId, existingPair.id)
       } else if (!marriageHasChildren(state.marriageId, parentageRows, childId)) {
         fillGap(state.marriageId, personId)
       } else {
-        setChildMarriage(childId, createMarriage(knownParentId, personId))
+        setChildMarriage(parentageRows, childId, createMarriage(marriageRows, knownParentId, personId))
       }
     }
   } else if (relationship === 'spouse-of') {
@@ -312,10 +315,103 @@ export async function linkPerson(personId, _prevState, formData) {
     if (existing && !marriageHasChildren(existing.id, parentageRows, null)) {
       fillGap(existing.id, spouseId)
     } else {
-      createMarriage(personId, spouseId)
+      createMarriage(marriageRows, personId, spouseId)
     }
   } else {
     return { error: 'Choose a relationship.' }
+  }
+
+  revalidatePath('/')
+  return { error: null, ...getTreeData() }
+}
+
+// Removes a parent/child/spouse relationship `personId` has, without
+// deleting either person — the undo path specs/link-relationships/spec.md
+// deliberately left out ("Child of" disables once two parents are
+// recorded, with no way back short of deleting someone). Every branch
+// reduces to one primitive: detach a child from one of its (up to two)
+// parents, keeping the other parent (if any) by reusing or creating an
+// incomplete marriage for them — see specs/unlink-from/spec.md. `formData`
+// always carries `category` (`'parents' | 'children' | 'spouse'`), plus
+// `removeParentId` (parents, one or two values), `childId` (children), or
+// `spouseId` plus an optional `keepParentId` (spouse, required only when
+// that marriage has children).
+export async function unlinkPerson(personId, _prevState, formData) {
+  const category = formData.get('category')?.toString() ?? ''
+
+  const person = db.select().from(people).where(eq(people.id, personId)).get()
+  if (!person) return { error: 'Person not found.' }
+
+  const treeData = getTreeData()
+  const { marriages: marriageRows, parentage: parentageRows } = treeData
+
+  // The shared primitive: child `childId` was on `marriageId`; `keptParentId`
+  // is the other spouse on that marriage, if any. Reassigns the child to a
+  // reused/new incomplete marriage for the kept parent, or — if there was
+  // no other parent — just drops the child's parentage row entirely.
+  function detachChildFromParent(childId, keptParentId) {
+    if (keptParentId) {
+      const existing = findIncompleteMarriage(marriageRows, keptParentId)
+      const newMarriageId = existing ? existing.id : createMarriage(marriageRows, keptParentId, null)
+      setChildMarriage(parentageRows, childId, newMarriageId)
+    } else {
+      db.delete(parentage).where(eq(parentage.childId, childId)).run()
+    }
+  }
+
+  if (category === 'parents') {
+    const row = parentageRows.find((p) => p.childId === personId)
+    if (!row) return { error: `${person.name} has no recorded parents.` }
+    const marriage = marriageRows.find((m) => m.id === row.marriageId)
+
+    const removeIds = [...new Set(formData.getAll('removeParentId').map(String))]
+    if (removeIds.length === 0 || !removeIds.every((id) => marriage.spouses.includes(id))) {
+      return { error: 'Choose at least one recorded parent to unlink.' }
+    }
+
+    if (removeIds.length === marriage.spouses.length) {
+      db.delete(parentage).where(eq(parentage.childId, personId)).run()
+    } else {
+      const keptId = marriage.spouses.find((id) => id !== removeIds[0])
+      detachChildFromParent(personId, keptId)
+    }
+  } else if (category === 'children') {
+    const childId = formData.get('childId')?.toString() ?? ''
+    const row = parentageRows.find((p) => p.childId === childId)
+    const childMarriage = row && marriageRows.find((m) => m.id === row.marriageId)
+    if (!childMarriage || !childMarriage.spouses.includes(personId)) {
+      return { error: 'Choose a valid child.' }
+    }
+
+    const otherParentId = childMarriage.spouses.find((id) => id !== personId)
+    detachChildFromParent(childId, otherParentId)
+  } else if (category === 'spouse') {
+    const spouseId = formData.get('spouseId')?.toString() ?? ''
+    const marriage = findMarriage(marriageRows, personId, spouseId)
+    if (!marriage || marriage.spouses.length !== 2) {
+      return { error: 'Choose a valid spouse.' }
+    }
+
+    const children = parentageRows.filter((p) => p.marriageId === marriage.id)
+    if (children.length > 0) {
+      const keepParentId = formData.get('keepParentId')?.toString() ?? ''
+      if (keepParentId !== personId && keepParentId !== spouseId) {
+        return { error: 'Choose which parent keeps the children.' }
+      }
+      const existing = findIncompleteMarriage(marriageRows, keepParentId)
+      const newMarriageId = existing ? existing.id : createMarriage(marriageRows, keepParentId, null)
+      children.forEach((row) => setChildMarriage(parentageRows, row.childId, newMarriageId))
+    }
+
+    const marriagePhotos = db.select().from(photos).where(eq(photos.marriageId, marriage.id)).all()
+    for (const photo of marriagePhotos) {
+      await deletePhotoFile(photo.filePath)
+    }
+    db.delete(photos).where(eq(photos.marriageId, marriage.id)).run()
+    db.delete(parentage).where(eq(parentage.marriageId, marriage.id)).run()
+    db.delete(marriages).where(eq(marriages.id, marriage.id)).run()
+  } else {
+    return { error: 'Choose what to unlink.' }
   }
 
   revalidatePath('/')

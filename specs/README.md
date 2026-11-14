@@ -14,6 +14,8 @@ as a feature grows.
 - [persistence](persistence/spec.md) — move from the static `familyData.js` module to a local SQLite database (Drizzle) behind Next.js, plus file storage for scanned photos
 - [person-details](person-details/spec.md) — clickable name opens a slide-in panel with an editable Markdown bio and a photo gallery, including inline image upload into the Markdown
 - [bio-editor](bio-editor/spec.md) — replace the raw-Markdown textarea with MDXEditor, a WYSIWYG editor, for the bio edit mode
-- [accounts-and-trees](accounts-and-trees/spec.md) — user accounts (email+password, Google, silent upgradeable guests) and multi-tree support with owner/editor/viewer sharing
+- [accounts-and-trees](accounts-and-trees/spec.md) — user accounts (email+password, Google, silent upgradeable guests) and multi-tree support with owner/editor/viewer sharing (multi-tree data model superseded by multiple_trees; auth/sharing still future work)
 - [edit-identity](edit-identity/spec.md) — edit a person's name, birth year, and death year from the panel, patching the already-rendered tree since it isn't deduped by person id
 - [link-relationships](link-relationships/spec.md) — "Link to" control in the panel's Actions section to connect two existing people as child-of/parent-of/spouse-of
+- [unlink-from](unlink-from/spec.md) — "Unlink from" control beside "Link to" to remove a parent/child/spouse relationship without deleting either person
+- [multiple_trees](multiple_trees/spec.md) — an account can own more than one tree, with a header switcher + create/rename/delete, no auth yet

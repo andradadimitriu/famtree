@@ -26,6 +26,7 @@ import {
   deletePersonPhoto,
   deletePerson,
   linkPerson,
+  unlinkPerson,
 } from '../db/actions'
 import { formatPartialDate, parsePartialDate } from '../lib/partialDate'
 import { getParentState, findMarriage } from '../lib/parentState'
@@ -68,6 +69,15 @@ export default function PersonPanel({
   const [otherParentId, setOtherParentId] = useState('')
   const [childId, setChildId] = useState('')
   const [spouseId, setSpouseId] = useState('')
+
+  const [isUnlinking, setIsUnlinking] = useState(false)
+  const [unlinkPending, setUnlinkPending] = useState(false)
+  const [unlinkError, setUnlinkError] = useState(null)
+  const [unlinkCategory, setUnlinkCategory] = useState('')
+  const [removeParentIds, setRemoveParentIds] = useState([])
+  const [unlinkChildId, setUnlinkChildId] = useState('')
+  const [unlinkSpouseId, setUnlinkSpouseId] = useState('')
+  const [keepParentId, setKeepParentId] = useState('')
 
   const [isEditingBio, setIsEditingBio] = useState(false)
   const editorRef = useRef(null)
@@ -142,6 +152,8 @@ export default function PersonPanel({
     setDeleteError(null)
     setIsLinking(false)
     setLinkError(null)
+    setIsUnlinking(false)
+    setUnlinkError(null)
   }
 
   // All people except the one whose panel this is — a person can't be
@@ -218,6 +230,119 @@ export default function PersonPanel({
       return
     }
     setIsLinking(false)
+    onTreeMutated(result)
+  }
+
+  // X's actual recorded parents (0, 1, or 2) — not an arbitrary picklist,
+  // see specs/unlink-from/spec.md.
+  const currentParents = (() => {
+    const row = (parentage ?? []).find((p) => p.childId === personId)
+    if (!row) return []
+    const marriage = (marriages ?? []).find((m) => m.id === row.marriageId)
+    return (marriage?.spouses ?? []).map((id) => ({ id, ...(people ?? {})[id] }))
+  })()
+
+  // Every child linked to any marriage X is a spouse in.
+  const currentChildren = (() => {
+    const ownMarriageIds = new Set(
+      (marriages ?? []).filter((m) => m.spouses.includes(personId)).map((m) => m.id),
+    )
+    return (parentage ?? [])
+      .filter((p) => ownMarriageIds.has(p.marriageId))
+      .map((p) => ({ id: p.childId, ...(people ?? {})[p.childId] }))
+  })()
+
+  // X's real (fully-known) spouses only — an Unknown-placeholder marriage
+  // has no real spouse to unlink from. See specs/unlink-from/spec.md.
+  const currentSpouses = (marriages ?? [])
+    .filter((m) => m.spouses.length === 2 && m.spouses.includes(personId))
+    .map((m) => {
+      const spouseId = m.spouses.find((id) => id !== personId)
+      return { id: spouseId, ...(people ?? {})[spouseId] }
+    })
+
+  const selectedSpouseMarriage = unlinkSpouseId ? findMarriage(marriages ?? [], personId, unlinkSpouseId) : null
+  const selectedSpouseChildren = selectedSpouseMarriage
+    ? (parentage ?? []).filter((p) => p.marriageId === selectedSpouseMarriage.id)
+    : []
+
+  function resetUnlinkFields() {
+    setUnlinkCategory('')
+    setRemoveParentIds([])
+    setUnlinkChildId('')
+    setUnlinkSpouseId('')
+    setKeepParentId('')
+    setUnlinkError(null)
+  }
+
+  function startUnlinking() {
+    resetUnlinkFields()
+    setIsUnlinking(true)
+  }
+
+  function handleUnlinkCategoryChange(value) {
+    setUnlinkCategory(value)
+    setRemoveParentIds(value === 'parents' && currentParents.length === 1 ? [currentParents[0].id] : [])
+    setUnlinkChildId('')
+    setUnlinkSpouseId('')
+    setKeepParentId('')
+    setUnlinkError(null)
+  }
+
+  function toggleRemoveParent(id) {
+    setRemoveParentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function unlinkSummary() {
+    if (unlinkCategory === 'parents' && removeParentIds.length > 0) {
+      const names = removeParentIds
+        .map((id) => currentParents.find((p) => p.id === id)?.name)
+        .join(' and ')
+      return `Remove ${names} as ${removeParentIds.length > 1 ? 'parents' : 'a parent'} of ${details.name}?`
+    }
+    if (unlinkCategory === 'children' && unlinkChildId) {
+      const child = currentChildren.find((c) => c.id === unlinkChildId)
+      return `Remove ${details.name} as a parent of ${child?.name}?`
+    }
+    if (unlinkCategory === 'spouse' && unlinkSpouseId) {
+      if (selectedSpouseChildren.length > 0 && !keepParentId) return null
+      const spouse = currentSpouses.find((s) => s.id === unlinkSpouseId)
+      return `End the marriage between ${details.name} and ${spouse?.name}?`
+    }
+    return null
+  }
+
+  function canSubmitUnlink() {
+    if (unlinkCategory === 'parents') return removeParentIds.length > 0
+    if (unlinkCategory === 'children') return Boolean(unlinkChildId)
+    if (unlinkCategory === 'spouse') {
+      if (!unlinkSpouseId) return false
+      return selectedSpouseChildren.length > 0 ? Boolean(keepParentId) : true
+    }
+    return false
+  }
+
+  async function handleSaveUnlink() {
+    if (!personId) return
+    setUnlinkPending(true)
+    setUnlinkError(null)
+    const formData = new FormData()
+    formData.set('category', unlinkCategory)
+    if (unlinkCategory === 'parents') {
+      removeParentIds.forEach((id) => formData.append('removeParentId', id))
+    } else if (unlinkCategory === 'children') {
+      formData.set('childId', unlinkChildId)
+    } else if (unlinkCategory === 'spouse') {
+      formData.set('spouseId', unlinkSpouseId)
+      if (selectedSpouseChildren.length > 0) formData.set('keepParentId', keepParentId)
+    }
+    const result = await unlinkPerson(personId, null, formData)
+    setUnlinkPending(false)
+    if (result.error) {
+      setUnlinkError(result.error)
+      return
+    }
+    setIsUnlinking(false)
     onTreeMutated(result)
   }
 
@@ -624,11 +749,147 @@ export default function PersonPanel({
                       </button>
                     </div>
                   </form>
+                ) : isUnlinking ? (
+                  <form
+                    className="person-panel__link-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      handleSaveUnlink()
+                    }}
+                  >
+                    <label className="person-panel__field">
+                      <span>Unlink</span>
+                      <select
+                        value={unlinkCategory}
+                        onChange={(event) => handleUnlinkCategoryChange(event.target.value)}
+                      >
+                        <option value="">Choose…</option>
+                        <option value="parents" disabled={currentParents.length === 0}>
+                          Parents{currentParents.length === 0 ? ' — none recorded' : ''}
+                        </option>
+                        <option value="children" disabled={currentChildren.length === 0}>
+                          Children{currentChildren.length === 0 ? ' — none recorded' : ''}
+                        </option>
+                        <option value="spouse" disabled={currentSpouses.length === 0}>
+                          Spouse{currentSpouses.length === 0 ? ' — none recorded' : ''}
+                        </option>
+                      </select>
+                    </label>
+
+                    {unlinkCategory === 'parents' && currentParents.length === 1 && (
+                      <div className="person-panel__field">
+                        <span>Parent</span>
+                        {currentParents[0].name}
+                      </div>
+                    )}
+
+                    {unlinkCategory === 'parents' && currentParents.length === 2 && (
+                      <div className="person-panel__field">
+                        <span>Parents to remove</span>
+                        {currentParents.map((p) => (
+                          <label key={p.id} className="person-panel__checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={removeParentIds.includes(p.id)}
+                              onChange={() => toggleRemoveParent(p.id)}
+                            />
+                            {personLabel(p)}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    {unlinkCategory === 'children' && (
+                      <label className="person-panel__field">
+                        <span>Child</span>
+                        <select
+                          value={unlinkChildId}
+                          onChange={(event) => setUnlinkChildId(event.target.value)}
+                        >
+                          <option value="">Choose…</option>
+                          {currentChildren.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {personLabel(c)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {unlinkCategory === 'spouse' && (
+                      <>
+                        <label className="person-panel__field">
+                          <span>Spouse</span>
+                          <select
+                            value={unlinkSpouseId}
+                            onChange={(event) => {
+                              setUnlinkSpouseId(event.target.value)
+                              setKeepParentId('')
+                            }}
+                          >
+                            <option value="">Choose…</option>
+                            {currentSpouses.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {personLabel(s)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {unlinkSpouseId && selectedSpouseChildren.length > 0 && (
+                          <div className="person-panel__field">
+                            <span>Who keeps the children?</span>
+                            <label className="person-panel__checkbox-row">
+                              <input
+                                type="radio"
+                                name="keepParent"
+                                checked={keepParentId === personId}
+                                onChange={() => setKeepParentId(personId)}
+                              />
+                              {details.name}
+                            </label>
+                            <label className="person-panel__checkbox-row">
+                              <input
+                                type="radio"
+                                name="keepParent"
+                                checked={keepParentId === unlinkSpouseId}
+                                onChange={() => setKeepParentId(unlinkSpouseId)}
+                              />
+                              {currentSpouses.find((s) => s.id === unlinkSpouseId)?.name}
+                            </label>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {unlinkSummary() && <p className="person-panel__unlink-summary">{unlinkSummary()}</p>}
+                    {unlinkError && <p className="person-panel__error">{unlinkError}</p>}
+                    <div className="person-panel__form-actions">
+                      <button type="button" onClick={() => setIsUnlinking(false)} disabled={unlinkPending}>
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="person-panel__danger-button"
+                        disabled={unlinkPending || !canSubmitUnlink()}
+                      >
+                        {unlinkPending ? 'Unlinking…' : 'Unlink'}
+                      </button>
+                    </div>
+                  </form>
                 ) : (
                   <div className="person-panel__actions-buttons">
-                    <button type="button" className="person-panel__secondary-button" onClick={startLinking}>
-                      Link to
-                    </button>
+                    <div className="person-panel__actions-row">
+                      <button type="button" className="person-panel__secondary-button" onClick={startLinking}>
+                        Link to
+                      </button>
+                      <button
+                        type="button"
+                        className="person-panel__secondary-button"
+                        onClick={startUnlinking}
+                      >
+                        Unlink from
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="person-panel__danger-button"

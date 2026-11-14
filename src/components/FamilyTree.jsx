@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
-import { buildFamilyTree, findUnlinkedPeople } from '../data/familyGraph'
+import { buildFamilyTree, findDisconnectedGroups } from '../data/familyGraph'
 import { formatPartialDate } from '../lib/partialDate'
 import { createPerson } from '../db/actions'
 import PersonPanel from './PersonPanel'
@@ -28,8 +28,6 @@ const STEP = CARD_WIDTH + MARRIAGE_GAP
 const unionSide = (i) => (i % 2 === 0 ? 1 : -1)
 const unionRank = (i) => Math.floor(i / 2) + 1
 const spouseCenterX = (i) => unionSide(i) * unionRank(i) * STEP
-const connectorX = (i) =>
-  spouseCenterX(i) - unionSide(i) * (CARD_WIDTH / 2 + MARRIAGE_GAP / 2)
 
 // Minimum breathing room between the edges of two adjacent nodes' cards,
 // matching what unmarried siblings/cousins got before marriages existed.
@@ -44,15 +42,43 @@ const UNION_TOGGLE_OFFSET = 14
 const UNION_TOGGLE_RADIUS = 9
 const BOTTOM_MARGIN = CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET + UNION_TOGGLE_RADIUS
 
-// Vertical gap between the bottom of the real hierarchy and the row of
-// unlinked people rendered below it (see `findUnlinkedPeople`).
-const ORPHAN_ROW_GAP = NODE_HEIGHT * 0.75
+// Vertical gap between stacked trees — the main one and, below it, one
+// per disconnected island (see `findDisconnectedRoots`).
+const TREE_GAP = NODE_HEIGHT
+
+// Flattens a person's own `marriages` plus, recursively, any further
+// marriages their spouse has (already stripped of the marriage that
+// connects the two of them — see familyGraph.js's `buildPerson`) into one
+// ordered list of renderable unions. Each entry carries the x offsets
+// (relative to this person's own card at x=0) its connector dot/line,
+// spouse card, and any further-nested union all share — kept in one place
+// here instead of recomputed separately by the layout, the renderer, and
+// the hierarchy's children accessor.
+//
+// A nested union (a spouse's *own* other marriage) anchors further out
+// along the same side as the marriage connecting the two of them, rather
+// than taking its own slot in this person's alternating-sides sequence —
+// so it reads as attached to the spouse's card, not this person's. Like
+// `unionSide`'s own doc comment, 3+ unions stacked this way will visually
+// crowd — an acceptable simplification for this sample app.
+function collectUnions(marriages, selfX = 0, side = 0) {
+  const unions = []
+  ;(marriages ?? []).forEach((marriage, i) => {
+    const unionSideI = side || unionSide(i)
+    const cardX = side ? selfX + unionSideI * STEP * (i + 1) : spouseCenterX(i)
+    const connX = cardX - unionSideI * (CARD_WIDTH / 2 + MARRIAGE_GAP / 2)
+    unions.push({ marriage, originX: selfX, cardX, connX, side: unionSideI })
+    if (marriage.spouse?.marriages?.length) {
+      unions.push(...collectUnions(marriage.spouse.marriages, cardX, unionSideI))
+    }
+  })
+  return unions
+}
 
 function personHalfWidth(marriages) {
   const half = CARD_WIDTH / 2
-  if (!marriages) return half
-  return marriages.reduce(
-    (max, _, i) => Math.max(max, Math.abs(spouseCenterX(i)) + half),
+  return collectUnions(marriages).reduce(
+    (max, union) => Math.max(max, Math.abs(union.cardX) + half),
     half,
   )
 }
@@ -73,19 +99,18 @@ function ancestorDepth(person) {
 // `marriage._children`, d3's convention), not on the person — so
 // expanding/collapsing one marriage never touches another. This is the
 // `d3.hierarchy` children accessor: it flattens whichever marriages are
-// currently expanded into one list, tagging each child with the index of
-// the marriage it came from so links can be drawn from that marriage's own
-// connector rather than the person's card.
+// currently expanded — including nested ones hanging off a spouse's own
+// other marriage, via `collectUnions` — into one list, tagging each child
+// with its union's connector x so links can be drawn from there rather
+// than the person's card.
 function childrenAccessor(node) {
   if (!node.marriages) return node.children
-  const order = node.marriages
-    .map((_, i) => i)
-    .sort((a, b) => connectorX(a) - connectorX(b))
-  const flatChildren = order.flatMap((i) => {
-    const kids = node.marriages[i].children
+  const unions = collectUnions(node.marriages).sort((a, b) => a.connX - b.connX)
+  const flatChildren = unions.flatMap((union) => {
+    const kids = union.marriage.children
     if (!kids) return []
     kids.forEach((child) => {
-      child.__unionIndex = i
+      child.__anchorX = union.connX
     })
     return kids
   })
@@ -97,6 +122,10 @@ function childrenAccessor(node) {
 // collapsed instead of dumping every generation on screen at once.
 function collapseBelowDepth(node, maxDepth, depth = 0) {
   node.marriages?.forEach((marriage) => {
+    // A spouse's *own* other marriage is the same generation as this
+    // one, not a generation down — recurse at the same `depth`, same as
+    // ordinary siblings.
+    if (marriage.spouse) collapseBelowDepth(marriage.spouse, maxDepth, depth)
     if (!marriage.children) return
     if (depth >= maxDepth) {
       marriage._children = marriage.children
@@ -301,7 +330,10 @@ function FamilyNode({
   onSelectPerson,
 }) {
   const { data, x, y } = node
-  const marriages = data.marriages ?? []
+  // Includes, recursively, any further marriage a spouse has of their own
+  // (e.g. David's earlier marriage, shown hanging off his card even though
+  // *this* node is Margaret) — see `collectUnions`'s comment.
+  const unions = collectUnions(data.marriages)
 
   // Ordinary tree members (reached walking down from the root) have their
   // parents rendered as the real hierarchy row above them, rather than
@@ -320,7 +352,7 @@ function FamilyNode({
 
   return (
     <g className="node" transform={`translate(${x}, ${y})`}>
-      {marriages.map((marriage, i) => {
+      {unions.map(({ marriage, originX, cardX, connX, side }, i) => {
         const hasChildren = Boolean(marriage.children || marriage._children)
         const isCollapsed = Boolean(marriage._children)
         // A marriage with no recorded spouse but recorded children still
@@ -328,19 +360,18 @@ function FamilyNode({
         // UnknownPersonCard) — only a childless unrecorded-spouse marriage
         // renders as if it were just the one person, with nothing to connect.
         const showUnion = Boolean(marriage.spouse) || hasChildren
-        const connX = showUnion ? connectorX(i) : 0
 
         return (
           <g
-            key={i}
+            key={marriage.id ?? i}
             className={`node__union${hasChildren ? ' node__union--interactive' : ''}`}
-            onClick={hasChildren ? () => onToggleMarriage(node, i) : undefined}
+            onClick={hasChildren ? () => onToggleMarriage(marriage) : undefined}
           >
             {showUnion && (
               <line
                 className="node__marriage-line"
-                x1={unionSide(i) * (CARD_WIDTH / 2)}
-                x2={spouseCenterX(i) - unionSide(i) * (CARD_WIDTH / 2)}
+                x1={originX + side * (CARD_WIDTH / 2)}
+                x2={cardX - side * (CARD_WIDTH / 2)}
                 y1={0}
                 y2={0}
               />
@@ -382,19 +413,19 @@ function FamilyNode({
         onToggle={onToggleAncestors}
         onSelectPerson={onSelectPerson}
       />
-      {marriages.map((marriage, i) => {
+      {unions.map(({ marriage, cardX }, i) => {
         if (marriage.spouse) {
           return (
-            <g key={i}>
+            <g key={marriage.id ?? i}>
               <PersonCard
                 person={marriage.spouse}
-                x={spouseCenterX(i)}
+                x={cardX}
                 isSpouse
                 onSelectPerson={onSelectPerson}
               />
               <AncestorStack
                 person={marriage.spouse}
-                x={spouseCenterX(i)}
+                x={cardX}
                 y={0}
                 onToggle={onToggleAncestors}
                 onSelectPerson={onSelectPerson}
@@ -403,20 +434,102 @@ function FamilyNode({
           )
         }
         const hasChildren = Boolean(marriage.children || marriage._children)
-        return hasChildren ? <UnknownPersonCard key={i} x={spouseCenterX(i)} /> : null
+        return hasChildren ? <UnknownPersonCard key={marriage.id ?? i} x={cardX} /> : null
       })}
     </g>
   )
 }
 
+// Lays out one tree (the main one, or one of the extra roots for a
+// disconnected island — see `findDisconnectedRoots`) via d3.hierarchy —
+// pure function of the tree's own root data, so it doesn't care which
+// kind of root it was given. Pulled out of the component's useMemo so
+// the multi-tree assembly below can call it once per tree.
+function layoutOneTree(rootData) {
+  const root = d3.hierarchy(rootData, childrenAccessor)
+  d3
+    .tree()
+    .nodeSize([NODE_WIDTH, NODE_HEIGHT])
+    .separation((a, b) => {
+      const gap = a.parent === b.parent ? SIBLING_GAP : COUSIN_GAP
+      return (halfWidth(a) + halfWidth(b) + gap) / NODE_WIDTH
+    })(root)
+
+  const descendants = root.descendants()
+  const minX = Math.min(...descendants.map((d) => d.x - halfWidth(d)))
+  const maxX = Math.max(...descendants.map((d) => d.x + halfWidth(d)))
+  const maxY = Math.max(...descendants.map((d) => d.y))
+
+  const maxAncestorDepth = Math.max(
+    0,
+    ...descendants.flatMap((d) => {
+      const spouses = collectUnions(d.data.marriages).map((u) => u.marriage.spouse).filter(Boolean)
+      return [d.data, ...spouses].map(ancestorDepth)
+    }),
+  )
+  const topMargin = NODE_HEIGHT / 2 + maxAncestorDepth * NODE_HEIGHT
+
+  // A node flagged `_focusedChild` (via handleToggleParentRow) hides
+  // itself and every ancestor above it, *and* every sibling of the
+  // focused child along with each sibling's own descendants — the tree
+  // narrows to just the focused line. Layout above is computed from the
+  // full `descendants` list regardless, so focusing never shifts
+  // anything else — it just leaves blank space
+  // (specs/collapse-parents/spec.md).
+  const hiddenData = new Set()
+  descendants.forEach((d) => {
+    const focusedChild = d.data._focusedChild
+    if (!focusedChild) return
+    for (let cur = d; cur; cur = cur.parent) hiddenData.add(cur.data)
+    d.children?.forEach((child) => {
+      if (child.data !== focusedChild) hideSubtree(child, hiddenData)
+    })
+  })
+
+  return {
+    nodes: descendants.filter((d) => !hiddenData.has(d.data)),
+    links: root
+      .links()
+      .filter((link) => !hiddenData.has(link.source.data) && !hiddenData.has(link.target.data)),
+    width: maxX - minX,
+    height: maxY + NODE_HEIGHT / 2 + BOTTOM_MARGIN + maxAncestorDepth * NODE_HEIGHT,
+    offsetX: -minX,
+    topMargin,
+  }
+}
+
 export default function FamilyTree({ people, marriages, parentage, rootId, peopleDetails }) {
   const rootDataRef = useRef(null)
-  const orphansRef = useRef(null)
+  // Everyone `buildFamilyTree(rootId)` doesn't reach, split by
+  // `findDisconnectedGroups`: `islandTrees` (built the same way the main
+  // root is, so a disconnected branch's own relationships still show —
+  // see specs/unlink-from/spec.md) and `isolatedPeople` (nobody has a
+  // relationship worth its own tree, grouped into one flat row instead
+  // of N separate one-card trees).
+  const disconnectedRef = useRef(null)
+
+  function buildDisconnectedGroups(currentPeople, currentMarriages, currentParentage) {
+    const { islandRoots, isolated } = findDisconnectedGroups(
+      currentPeople,
+      currentMarriages,
+      currentParentage,
+      rootId,
+    )
+    return {
+      islandTrees: islandRoots.map((islandRootId) => {
+        const data = buildFamilyTree(currentPeople, currentMarriages, currentParentage, islandRootId)
+        collapseBelowDepth(data, 1)
+        return data
+      }),
+      isolatedPeople: isolated.map((id) => ({ id, ...currentPeople[id] })),
+    }
+  }
+
   if (!rootDataRef.current) {
     const data = buildFamilyTree(people, marriages, parentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
-    orphansRef.current = findUnlinkedPeople(people, marriages, parentage)
+    disconnectedRef.current = buildDisconnectedGroups(people, marriages, parentage)
   }
 
   const [version, setVersion] = useState(0)
@@ -426,8 +539,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
   // the frozen collapse-state tree. See specs/person-details/spec.md.
   const [selectedPersonId, setSelectedPersonId] = useState(null)
 
-  const handleToggleMarriage = (node, unionIndex) => {
-    const marriage = node.data.marriages[unionIndex]
+  const handleToggleMarriage = (marriage) => {
     if (marriage.children) {
       marriage._children = marriage.children
       marriage.children = undefined
@@ -458,7 +570,7 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     const data = buildFamilyTree(freshPeople, freshMarriages, freshParentage, rootId)
     collapseBelowDepth(data, 1)
     rootDataRef.current = data
-    orphansRef.current = findUnlinkedPeople(freshPeople, freshMarriages, freshParentage)
+    disconnectedRef.current = buildDisconnectedGroups(freshPeople, freshMarriages, freshParentage)
     setVersion((v) => v + 1)
   }
 
@@ -523,80 +635,41 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     setVersion((v) => v + 1)
   }
 
-  const { nodes, links, orphanNodes, width, height, offsetX, topMargin } = useMemo(() => {
-    const root = d3.hierarchy(rootDataRef.current, childrenAccessor)
-    d3
-      .tree()
-      .nodeSize([NODE_WIDTH, NODE_HEIGHT])
-      .separation((a, b) => {
-        const gap = a.parent === b.parent ? SIBLING_GAP : COUSIN_GAP
-        return (halfWidth(a) + halfWidth(b) + gap) / NODE_WIDTH
-      })(root)
+  // One layout per tree — the main one, then one per disconnected island
+  // — stacked vertically and horizontally centered within the widest
+  // one's span, so a narrower island's cards sit centered under the main
+  // tree rather than pinned to its left edge. Fully isolated people (see
+  // `findDisconnectedGroups`) aren't trees at all — they're laid out as
+  // one flat row, centered the same way, at the very end.
+  const { trees, isolatedNodes, width, height } = useMemo(() => {
+    const { islandTrees = [], isolatedPeople = [] } = disconnectedRef.current ?? {}
+    const layouts = [rootDataRef.current, ...islandTrees].map(layoutOneTree)
+    const isolatedRowWidth = isolatedPeople.length * NODE_WIDTH
+    const width = Math.max(...layouts.map((l) => l.width), isolatedRowWidth)
 
-    const descendants = root.descendants()
-    const minX = Math.min(...descendants.map((d) => d.x - halfWidth(d)))
-    const maxX = Math.max(...descendants.map((d) => d.x + halfWidth(d)))
-    const maxY = Math.max(...descendants.map((d) => d.y))
-
-    const maxAncestorDepth = Math.max(
-      0,
-      ...descendants.flatMap((d) => {
-        const spouses = (d.data.marriages ?? []).map((m) => m.spouse).filter(Boolean)
-        return [d.data, ...spouses].map(ancestorDepth)
-      }),
-    )
-    const topMargin = NODE_HEIGHT / 2 + maxAncestorDepth * NODE_HEIGHT
-
-    // A node flagged `_focusedChild` (via handleToggleParentRow) hides
-    // itself and every ancestor above it, *and* every sibling of the
-    // focused child along with each sibling's own descendants — the tree
-    // narrows to just the focused line. Layout above is computed from the
-    // full `descendants` list regardless, so focusing never shifts
-    // anything else — it just leaves blank space
-    // (specs/collapse-parents/spec.md).
-    const hiddenData = new Set()
-    descendants.forEach((d) => {
-      const focusedChild = d.data._focusedChild
-      if (!focusedChild) return
-      for (let cur = d; cur; cur = cur.parent) hiddenData.add(cur.data)
-      d.children?.forEach((child) => {
-        if (child.data !== focusedChild) hideSubtree(child, hiddenData)
-      })
+    let y = 0
+    const trees = layouts.map((layout) => {
+      const tree = { ...layout, offsetX: (width - layout.width) / 2 + layout.offsetX, treeY: y }
+      y += layout.height + TREE_GAP
+      return tree
     })
 
-    // People with no marriage/parentage record at all aren't reachable
-    // from the root, so they sit outside the d3.hierarchy layout above —
-    // laid out here instead as their own row, centered below the tree.
-    const orphans = orphansRef.current ?? []
-    const orphanRowWidth = orphans.length * NODE_WIDTH
-    const treeMidX = (minX + maxX) / 2
-    const orphanRowMinX = treeMidX - orphanRowWidth / 2
-    const orphanY = maxY + NODE_HEIGHT + ORPHAN_ROW_GAP
-    const orphanNodes = orphans.map((person, i) => ({
-      person,
-      x: orphanRowMinX + i * NODE_WIDTH + NODE_WIDTH / 2,
-      y: orphanY,
-    }))
-
-    const fullMinX = Math.min(minX, orphanRowMinX)
-    const fullMaxX = Math.max(maxX, orphanRowMinX + orphanRowWidth)
-    const treeHeight = maxY + NODE_HEIGHT / 2 + BOTTOM_MARGIN + maxAncestorDepth * NODE_HEIGHT
-    const fullHeight =
-      orphans.length > 0 ? Math.max(treeHeight, orphanY + NODE_HEIGHT / 2 + BOTTOM_MARGIN) : treeHeight
-
-    return {
-      nodes: descendants.filter((d) => !hiddenData.has(d.data)),
-      links: root
-        .links()
-        .filter((link) => !hiddenData.has(link.source.data) && !hiddenData.has(link.target.data)),
-      orphanNodes,
-      width: fullMaxX - fullMinX,
-      height: fullHeight,
-      offsetX: -fullMinX,
-      topMargin,
+    let isolatedNodes = []
+    if (isolatedPeople.length > 0) {
+      const rowOffsetX = (width - isolatedRowWidth) / 2
+      const rowY = y + NODE_HEIGHT / 2
+      isolatedNodes = isolatedPeople.map((person, i) => ({
+        person,
+        x: rowOffsetX + i * NODE_WIDTH + NODE_WIDTH / 2,
+        y: rowY,
+      }))
+      y += NODE_HEIGHT / 2 + BOTTOM_MARGIN + TREE_GAP
     }
+
+    return { trees, isolatedNodes, width, height: Math.max(0, y - TREE_GAP) }
     // `version` is the re-render trigger: toggling a node mutates the plain
-    // data object in place, so the hierarchy is rebuilt from scratch here.
+    // data object in place, so every tree's layout is rebuilt from scratch
+    // here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version])
 
@@ -624,40 +697,44 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
           role="img"
           aria-label="Family tree"
         >
-          <g transform={`translate(${offsetX}, ${topMargin})`}>
-            {links.map((link) => {
-              // A child links to the connector of the specific marriage it
-              // came from, not to the person's own card position.
-              const unionIndex = link.target.data.__unionIndex
-              const source =
-                unionIndex === undefined
-                  ? link.source
-                  : {
-                      x: link.source.x + connectorX(unionIndex),
-                      y: link.source.y,
-                    }
-              return (
-                <path
-                  key={`${link.source.x},${link.source.y}-${link.target.x},${link.target.y}`}
-                  className="link"
-                  d={linkPath({ source, target: link.target })}
+          {trees.map((tree, treeIndex) => (
+            <g key={treeIndex} transform={`translate(${tree.offsetX}, ${tree.treeY + tree.topMargin})`}>
+              {tree.links.map((link) => {
+                // A child links to the connector of the specific union it
+                // came from (which may be a nested union, hanging off a
+                // spouse's own other marriage — see `collectUnions`), not
+                // to the person's own card position.
+                const anchorX = link.target.data.__anchorX
+                const source =
+                  anchorX === undefined
+                    ? link.source
+                    : {
+                        x: link.source.x + anchorX,
+                        y: link.source.y,
+                      }
+                return (
+                  <path
+                    key={`${link.source.x},${link.source.y}-${link.target.x},${link.target.y}`}
+                    className="link"
+                    d={linkPath({ source, target: link.target })}
+                  />
+                )
+              })}
+              {tree.nodes.map((node) => (
+                <FamilyNode
+                  key={`${node.x},${node.y},${node.data.name}`}
+                  node={node}
+                  onToggleMarriage={handleToggleMarriage}
+                  onToggleAncestors={handleToggleAncestors}
+                  onToggleParentRow={handleToggleParentRow}
+                  onSelectPerson={setSelectedPersonId}
                 />
-              )
-            })}
-            {nodes.map((node) => (
-              <FamilyNode
-                key={`${node.x},${node.y},${node.data.name}`}
-                node={node}
-                onToggleMarriage={handleToggleMarriage}
-                onToggleAncestors={handleToggleAncestors}
-                onToggleParentRow={handleToggleParentRow}
-                onSelectPerson={setSelectedPersonId}
-              />
-            ))}
-            {orphanNodes.map(({ person, x, y }) => (
-              <PersonCard key={person.id} person={person} x={x} y={y} onSelectPerson={setSelectedPersonId} />
-            ))}
-          </g>
+              ))}
+            </g>
+          ))}
+          {isolatedNodes.map(({ person, x, y }) => (
+            <PersonCard key={person.id} person={person} x={x} y={y} onSelectPerson={setSelectedPersonId} />
+          ))}
         </svg>
         <div className="family-tree__toolbar">
           {isCreatingPerson ? (

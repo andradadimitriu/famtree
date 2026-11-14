@@ -233,6 +233,16 @@
   color: var(--color-accent-contrast);
 }
 
+/* Outranks the plain `button[type='submit']` rule above (two classes beat
+   one class + one attribute) — the Unlink form's submit button reuses
+   .person-panel__danger-button so it reads as destructive, same as
+   "Confirm delete", rather than falling back to the accent/submit blue. */
+.person-panel__form-actions button.person-panel__danger-button[type='submit'] {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: var(--color-accent-contrast);
+}
+
 .person-panel__error {
   color: var(--color-error);
   font-size: 0.85rem;
@@ -329,6 +339,28 @@
 
 .person-panel__secondary-button:hover {
   border-color: var(--color-accent);
+}
+
+/* "Link to" and "Unlink from" sit side by side, above "Delete node" on
+   its own row — see specs/unlink-from/spec.md. */
+.person-panel__actions-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.person-panel__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--color-text);
+}
+
+.person-panel__unlink-summary {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: 0;
 }
 
 .person-panel__delete-confirm p {
