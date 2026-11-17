@@ -22,7 +22,14 @@ export function getTreeData() {
 
   return {
     people: Object.fromEntries(
-      peopleRows.map((p) => [p.id, { name: p.name, born: p.born ?? undefined }]),
+      peopleRows.map((p) => [
+        p.id,
+        {
+          name: p.name,
+          born: p.born ?? undefined,
+          profilePhotoUrl: p.profilePhotoId ? `/photos/${p.profilePhotoId}` : undefined,
+        },
+      ]),
     ),
     marriages: marriageRows.map((m) => ({
       id: m.id,
@@ -69,6 +76,8 @@ function getPeopleDetails(peopleRows) {
         died: p.died ?? undefined,
         bio: p.bio ?? '',
         photos: photosByPerson[p.id] ?? [],
+        profilePhotoId: p.profilePhotoId ?? undefined,
+        profilePhotoUrl: p.profilePhotoId ? `/photos/${p.profilePhotoId}` : undefined,
       },
     ]),
   )

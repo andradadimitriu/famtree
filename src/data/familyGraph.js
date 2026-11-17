@@ -72,7 +72,9 @@ function buildPerson(
   const person = people[personId]
   // `id` is what lets a clicked card look itself up in the separate,
   // flat `peopleDetails` map — see specs/person-details/spec.md.
-  const node = { id: personId, name: person.name, born: person.born }
+  // `profilePhotoUrl` is the avatar shown on the card — see
+  // specs/profile-photo/spec.md.
+  const node = { id: personId, name: person.name, born: person.born, profilePhotoUrl: person.profilePhotoUrl }
 
   const personMarriages = includeMarriages
     ? (indices.marriagesByPerson[personId] ?? []).filter((m) => !visitedMarriages.has(m.id))

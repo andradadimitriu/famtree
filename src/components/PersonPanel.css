@@ -93,6 +93,106 @@
   font-size: 0.95rem;
 }
 
+.person-panel__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.person-panel__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.person-panel__avatar--lg {
+  width: 48px;
+  height: 48px;
+  font-size: 1.1rem;
+}
+
+.person-panel__profile-photo {
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 0 0 1.25rem;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.person-panel__profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.person-panel__avatar-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.person-panel__avatar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.person-panel__avatar-button {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.person-panel__avatar-button:hover {
+  border-color: var(--color-accent);
+}
+
+.person-panel__avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.person-panel__avatar-grid-item {
+  padding: 0;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+
+.person-panel__avatar-grid-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.person-panel__avatar-grid-item--selected {
+  border-color: var(--color-accent);
+}
+
 .person-panel__link-form {
   display: flex;
   flex-direction: column;
@@ -230,6 +330,21 @@
 .person-panel__form-actions button[type='submit'] {
   background: var(--color-accent);
   border-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+/* Outranks the plain `.person-panel__form-actions button` rule above
+   (two classes beat one class + one element) — a Cancel button reusing
+   .person-panel__danger-button reads the same as "Delete node" instead
+   of falling back to the plain neutral button. */
+.person-panel__form-actions button.person-panel__danger-button {
+  background: var(--color-surface);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.person-panel__form-actions button.person-panel__danger-button:hover {
+  background: var(--color-error);
   color: var(--color-accent-contrast);
 }
 

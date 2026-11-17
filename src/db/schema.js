@@ -12,6 +12,9 @@ export const people = sqliteTable('people', {
   born: text('born'),
   died: text('died'),
   bio: text('bio'), // Markdown source — see specs/person-details/spec.md
+  // Which of this person's own `photos` rows (personId must match) is
+  // shown as their avatar — see specs/profile-photo/spec.md.
+  profilePhotoId: integer('profile_photo_id').references(() => photos.id),
 })
 
 export const marriages = sqliteTable('marriages', {

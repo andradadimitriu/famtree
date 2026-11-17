@@ -142,6 +142,12 @@
   text-decoration: underline;
 }
 
+.node__avatar-outline {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
 .node__marriage-line {
   stroke: var(--color-accent);
   stroke-width: 1.5;

@@ -24,6 +24,7 @@ import {
   updatePersonIdentity,
   uploadPersonPhoto,
   deletePersonPhoto,
+  setProfilePhoto,
   deletePerson,
   linkPerson,
   unlinkPerson,
@@ -37,6 +38,17 @@ const initialUploadState = { error: null, photos: [] }
 const DEFAULT_PANEL_WIDTH = 360
 const MIN_PANEL_WIDTH = 280
 const MAX_PANEL_WIDTH_RATIO = 0.7
+
+// Renders nothing when no profile photo is set — no placeholder. See
+// specs/profile-photo/spec.md.
+function PersonAvatar({ url, size = 'md' }) {
+  if (!url) return null
+  return (
+    <span className={`person-panel__avatar person-panel__avatar--${size}`}>
+      <img src={url} alt="" />
+    </span>
+  )
+}
 
 // Slide-in panel for a person's Markdown bio + photo gallery. See
 // specs/person-details/spec.md. Always mounted (even when closed) so the
@@ -90,6 +102,18 @@ export default function PersonPanel({
   const [nameInput, setNameInput] = useState('')
   const [bornInput, setBornInput] = useState('')
   const [diedInput, setDiedInput] = useState('')
+
+  // Profile-photo picker (upload new / choose existing / remove) only
+  // stages a choice — the preview above the buttons updates right away,
+  // but it isn't written as this person's profile photo until the
+  // identity form's own Save is pressed (`handleSaveIdentity` below).
+  // `undefined` = no staged change (show `details.profilePhotoUrl`
+  // as-is); `null` = staged removal; `{ id, url }` = staged selection.
+  // See specs/profile-photo/spec.md.
+  const [avatarPending, setAvatarPending] = useState(false)
+  const [avatarError, setAvatarError] = useState(null)
+  const [isChoosingAvatarPhoto, setIsChoosingAvatarPhoto] = useState(false)
+  const [stagedProfilePhoto, setStagedProfilePhoto] = useState(undefined)
 
   // MDXEditor ships its own `dark-theme` class covering its full internal
   // palette (dialogs, hover/disabled states, etc. — well beyond the 4
@@ -148,6 +172,9 @@ export default function PersonPanel({
     setBioError(null)
     setIsEditingIdentity(false)
     setIdentityError(null)
+    setIsChoosingAvatarPhoto(false)
+    setAvatarError(null)
+    setStagedProfilePhoto(undefined)
     setConfirmingDelete(false)
     setDeleteError(null)
     setIsLinking(false)
@@ -346,11 +373,45 @@ export default function PersonPanel({
     onTreeMutated(result)
   }
 
+  // Stages a choice locally — the preview above the buttons updates
+  // immediately, but nothing is written to this person's record until
+  // handleSaveIdentity below. `photo: null` stages a removal.
+  function stageProfilePhoto(photo) {
+    setStagedProfilePhoto(photo)
+    setIsChoosingAvatarPhoto(false)
+  }
+
+  // Uploading a *new* file still has to actually upload it right away
+  // (there's no draft/staging area on the server for a raw file) — the
+  // photo is created as an ordinary gallery row immediately, same as
+  // any other gallery upload. Only the "this is the profile photo" part
+  // is staged, same as choosing an existing one.
+  async function handleUploadProfilePhoto(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !personId) return
+    setAvatarPending(true)
+    setAvatarError(null)
+    const formData = new FormData()
+    formData.set('file', file)
+    const uploadResult = await uploadPersonPhoto(personId, null, formData)
+    setAvatarPending(false)
+    if (uploadResult.error) {
+      setAvatarError(uploadResult.error)
+      return
+    }
+    const photo = uploadResult.photos[0]
+    stageProfilePhoto({ id: photo.id, url: photo.url })
+  }
+
   function startEditingIdentity() {
     setNameInput(details.name)
     setBornInput(details.born ?? '')
     setDiedInput(details.died ?? '')
     setIdentityError(null)
+    setIsChoosingAvatarPhoto(false)
+    setAvatarError(null)
+    setStagedProfilePhoto(undefined)
     setIsEditingIdentity(true)
   }
 
@@ -363,16 +424,32 @@ export default function PersonPanel({
     formData.set('born', bornInput)
     formData.set('died', diedInput)
     const result = await updatePersonIdentity(personId, null, formData)
-    setIdentityPending(false)
     if (result.error) {
+      setIdentityPending(false)
       setIdentityError(result.error)
       return
     }
+
+    let profilePhotoUrl = details.profilePhotoUrl
+    if (stagedProfilePhoto !== undefined) {
+      const photoResult = await setProfilePhoto(personId, stagedProfilePhoto ? stagedProfilePhoto.id : null)
+      if (photoResult.error) {
+        setIdentityPending(false)
+        setIdentityError(photoResult.error)
+        return
+      }
+      profilePhotoUrl = photoResult.profilePhotoUrl
+    }
+
+    setIdentityPending(false)
     setIsEditingIdentity(false)
+    setIsChoosingAvatarPhoto(false)
+    setStagedProfilePhoto(undefined)
     onPersonUpdated(personId, {
       name: nameInput.trim(),
       born: parsePartialDate(bornInput).value ?? undefined,
       died: parsePartialDate(diedInput).value ?? undefined,
+      profilePhotoUrl,
     })
   }
 
@@ -428,6 +505,12 @@ export default function PersonPanel({
     return result.photos[0].url
   }
 
+  // Staged-aware view of the profile photo for the identity form's
+  // preview/grid — `undefined` means no staged change, so fall back to
+  // the persisted value. See stageProfilePhoto's comment.
+  const previewProfilePhotoUrl = stagedProfilePhoto === undefined ? details?.profilePhotoUrl : stagedProfilePhoto?.url
+  const previewProfilePhotoId = stagedProfilePhoto === undefined ? details?.profilePhotoId : stagedProfilePhoto?.id
+
   return (
     <>
       <aside
@@ -477,10 +560,75 @@ export default function PersonPanel({
                       />
                     </label>
                     {identityError && <p className="person-panel__error">{identityError}</p>}
+                    <div className="person-panel__field">
+                      <span>Profile picture</span>
+                      <div className="person-panel__avatar-field">
+                        <PersonAvatar url={previewProfilePhotoUrl} size="lg" />
+                        <div className="person-panel__avatar-controls">
+                          <label className="person-panel__avatar-button">
+                            Upload new
+                            <input
+                              type="file"
+                              accept="image/*"
+                              hidden
+                              disabled={avatarPending}
+                              onChange={handleUploadProfilePhoto}
+                            />
+                          </label>
+                          {details.photos.length > 0 && (
+                            <button
+                              type="button"
+                              className="person-panel__avatar-button"
+                              disabled={avatarPending}
+                              onClick={() => setIsChoosingAvatarPhoto((prev) => !prev)}
+                            >
+                              Choose existing
+                            </button>
+                          )}
+                          {previewProfilePhotoUrl && (
+                            <button
+                              type="button"
+                              className="person-panel__avatar-button"
+                              disabled={avatarPending}
+                              onClick={() => stageProfilePhoto(null)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {isChoosingAvatarPhoto && (
+                          <div className="person-panel__avatar-grid">
+                            {details.photos.map((photo) => (
+                              <button
+                                type="button"
+                                key={photo.id}
+                                className={`person-panel__avatar-grid-item${
+                                  photo.id === previewProfilePhotoId
+                                    ? ' person-panel__avatar-grid-item--selected'
+                                    : ''
+                                }`}
+                                disabled={avatarPending}
+                                onClick={() => stageProfilePhoto({ id: photo.id, url: photo.url })}
+                                aria-label="Use this photo as profile photo"
+                              >
+                                <img src={photo.url} alt={photo.caption ?? ''} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {avatarError && <p className="person-panel__error">{avatarError}</p>}
+                      </div>
+                    </div>
                     <div className="person-panel__form-actions">
                       <button
                         type="button"
-                        onClick={() => setIsEditingIdentity(false)}
+                        className="person-panel__danger-button"
+                        onClick={() => {
+                          setIsEditingIdentity(false)
+                          setIsChoosingAvatarPhoto(false)
+                          setAvatarError(null)
+                          setStagedProfilePhoto(undefined)
+                        }}
                         disabled={identityPending}
                       >
                         Cancel
@@ -510,6 +658,16 @@ export default function PersonPanel({
                   ×
                 </button>
               </div>
+
+              {/* Read-only display — edited only via the pencil-icon
+                  identity form above, not interactive itself. Renders
+                  nothing when no profile photo is set — no placeholder.
+                  See specs/profile-photo/spec.md. */}
+              {details.profilePhotoUrl && (
+                <div className="person-panel__profile-photo">
+                  <img src={details.profilePhotoUrl} alt="" />
+                </div>
+              )}
 
               <section className="person-panel__section">
                 <div className="person-panel__section-header">

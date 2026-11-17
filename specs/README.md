@@ -19,3 +19,4 @@ as a feature grows.
 - [link-relationships](link-relationships/spec.md) — "Link to" control in the panel's Actions section to connect two existing people as child-of/parent-of/spouse-of
 - [unlink-from](unlink-from/spec.md) — "Unlink from" control beside "Link to" to remove a parent/child/spouse relationship without deleting either person
 - [multiple_trees](multiple_trees/spec.md) — an account can own more than one tree, with a header switcher + create/rename/delete, no auth yet
+- [profile-photo](profile-photo/spec.md) — a designated profile photo per person (upload new or pick from their existing gallery), shown as an avatar on tree cards and the panel header

@@ -120,9 +120,44 @@ export async function deletePersonPhoto(photoId) {
   const photo = db.select().from(photos).where(eq(photos.id, photoId)).get()
   if (!photo) return
 
+  // Deleting a photo currently set as its person's profile photo would
+  // otherwise leave `people.profilePhotoId` pointing at a row that no
+  // longer exists — violating the FK (foreign_keys=ON) the moment the
+  // row below is deleted. Clear it first. See specs/profile-photo/spec.md.
+  if (photo.personId) {
+    const person = db.select().from(people).where(eq(people.id, photo.personId)).get()
+    if (person?.profilePhotoId === photoId) {
+      db.update(people).set({ profilePhotoId: null }).where(eq(people.id, photo.personId)).run()
+    }
+  }
+
   db.delete(photos).where(eq(photos.id, photoId)).run()
   await deletePhotoFile(photo.filePath)
   revalidatePath('/')
+}
+
+// Sets (or, with `photoId` null, clears) which of a person's own photos
+// is their profile photo — the avatar shown on their tree card and panel
+// heading. `photoId` must belong to this exact person (never a marriage
+// photo or someone else's) — see specs/profile-photo/spec.md.
+// `profilePhotoUrl` is also baked into FamilyTree.jsx's client-side
+// hierarchy, which this write alone doesn't reach — the caller patches
+// that tree directly once this resolves, same as updatePersonIdentity.
+export async function setProfilePhoto(personId, photoId) {
+  if (photoId == null) {
+    db.update(people).set({ profilePhotoId: null }).where(eq(people.id, personId)).run()
+    revalidatePath('/')
+    return { error: null, profilePhotoUrl: undefined }
+  }
+
+  const photo = db.select().from(photos).where(eq(photos.id, photoId)).get()
+  if (!photo || photo.personId !== personId) {
+    return { error: 'Choose a photo already uploaded for this person.' }
+  }
+
+  db.update(people).set({ profilePhotoId: photoId }).where(eq(people.id, personId)).run()
+  revalidatePath('/')
+  return { error: null, profilePhotoUrl: `/photos/${photoId}` }
 }
 
 // Inserts a standalone person with no marriages/parentage — the family
@@ -162,6 +197,14 @@ export async function deletePerson(personId) {
   const person = db.select().from(people).where(eq(people.id, personId)).get()
   if (!person) {
     return { error: 'Person not found.' }
+  }
+
+  // Clear the person's own profilePhotoId before their photos are
+  // deleted below — otherwise deleting whichever photo it points at
+  // violates the FK (foreign_keys=ON) before the person row itself goes.
+  // See specs/profile-photo/spec.md.
+  if (person.profilePhotoId) {
+    db.update(people).set({ profilePhotoId: null }).where(eq(people.id, personId)).run()
   }
 
   const ownPhotos = db.select().from(photos).where(eq(photos.personId, personId)).all()

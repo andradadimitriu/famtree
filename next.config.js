@@ -5,6 +5,13 @@ const nextConfig = {
   turbopack: {
     root: import.meta.dirname,
   },
+  experimental: {
+    serverActions: {
+      // `uploadPersonPhoto` (src/db/actions.js) accepts multiple images per
+      // submit, and the default 1MB cap is well under a single phone photo.
+      bodySizeLimit: '50mb',
+    },
+  },
 }
 
 export default nextConfig

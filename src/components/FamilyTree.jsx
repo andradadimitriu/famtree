@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { buildFamilyTree, findDisconnectedGroups } from '../data/familyGraph'
 import { formatPartialDate } from '../lib/partialDate'
@@ -15,6 +15,17 @@ const CARD_WIDTH = 150
 // reserved strip above the name, rather than overlapping it.
 const CARD_HEIGHT = 72
 const PARENT_TOGGLE_SLOT = 22
+
+// A small avatar badge in the card's top-left corner — see
+// specs/profile-photo/spec.md. Left, not top-center, so it never
+// overlaps the parent-row/ancestor toggle badges, which both sit
+// top-center (translate(0, ...)); a long centered name's leftmost
+// glyphs can still graze it — accepted rough edge, same spirit as
+// `unionSide`'s own doc comment below.
+const AVATAR_RADIUS = 11
+const AVATAR_INSET = 5
+const AVATAR_CX = -CARD_WIDTH / 2 + AVATAR_RADIUS + AVATAR_INSET
+const AVATAR_CY = -CARD_HEIGHT / 2 + AVATAR_RADIUS + AVATAR_INSET
 
 // Married nodes render extra cards (one per spouse) joined to the person
 // by a marriage node, so they need more horizontal room than a single card.
@@ -75,15 +86,45 @@ function collectUnions(marriages, selfX = 0, side = 0) {
   return unions
 }
 
+// A union with no recorded spouse and no children renders nothing at
+// all in FamilyNode below (no line, no dot, no card) — see its own
+// `unions.map`. Both width helpers below need to agree with that, or
+// an invisible placeholder marriage (e.g. a leftover incomplete
+// marriage from "Link to" with nobody ever filled in) silently claims
+// layout width for a card that's never actually drawn.
+function isRenderedUnion({ marriage }) {
+  return Boolean(marriage.spouse) || Boolean(marriage.children || marriage._children)
+}
+
 function personHalfWidth(marriages) {
   const half = CARD_WIDTH / 2
-  return collectUnions(marriages).reduce(
-    (max, union) => Math.max(max, Math.abs(union.cardX) + half),
-    half,
-  )
+  return collectUnions(marriages)
+    .filter(isRenderedUnion)
+    .reduce((max, union) => Math.max(max, Math.abs(union.cardX) + half), half)
 }
 
 const halfWidth = (d) => personHalfWidth(d.data.marriages)
+
+// Real left/right extent of a person's own card plus their unions'
+// spouse cards, unlike `personHalfWidth` above (a symmetric max-abs,
+// used only for `separation()`'s conservative sibling spacing). A
+// union is almost always one-sided (`unionSide(0)` is always to the
+// right), so mirroring that offset onto the empty side — as treating
+// it as a true "half width" would — phantom-reserves space nothing
+// ever draws into, pushing the whole tree's computed bounding box (and
+// so its centering) off to one side. Used for the real minX/maxX below.
+function personExtent(marriages) {
+  const half = CARD_WIDTH / 2
+  return collectUnions(marriages)
+    .filter(isRenderedUnion)
+    .reduce(
+      (acc, union) => ({
+        left: Math.min(acc.left, union.cardX - half),
+        right: Math.max(acc.right, union.cardX + half),
+      }),
+      { left: -half, right: half },
+    )
+}
 
 // How many *expanded* ancestor generations sit above a person (0 if
 // collapsed/absent). Ancestor stacks aren't part of the d3.hierarchy
@@ -164,6 +205,35 @@ function patchPersonInTree(node, personId, updates) {
   )
 }
 
+// Photo clipped to a circle, or an initial-letter placeholder when the
+// person has no profile photo set — see specs/profile-photo/spec.md.
+// `useId` keyed per instance (not per person id) since the same person
+// can render as more than one card at once (e.g. as a spouse's own
+// ancestor) — a shared clipPath id across those would be invalid SVG.
+// Renders nothing when no profile photo is set — no placeholder. See
+// specs/profile-photo/spec.md.
+function PersonAvatar({ url }) {
+  const clipId = useId()
+  if (!url) return null
+  return (
+    <g className="node__avatar">
+      <clipPath id={clipId}>
+        <circle cx={AVATAR_CX} cy={AVATAR_CY} r={AVATAR_RADIUS} />
+      </clipPath>
+      <image
+        href={url}
+        x={AVATAR_CX - AVATAR_RADIUS}
+        y={AVATAR_CY - AVATAR_RADIUS}
+        width={AVATAR_RADIUS * 2}
+        height={AVATAR_RADIUS * 2}
+        preserveAspectRatio="xMidYMid slice"
+        clipPath={`url(#${clipId})`}
+      />
+      <circle className="node__avatar-outline" cx={AVATAR_CX} cy={AVATAR_CY} r={AVATAR_RADIUS} />
+    </g>
+  )
+}
+
 function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) {
   return (
     <g
@@ -178,6 +248,7 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) 
         height={CARD_HEIGHT}
         rx={8}
       />
+      <PersonAvatar url={person.profilePhotoUrl} />
       <text
         className="node__name node__name--clickable"
         y={-6}
@@ -456,8 +527,8 @@ function layoutOneTree(rootData) {
     })(root)
 
   const descendants = root.descendants()
-  const minX = Math.min(...descendants.map((d) => d.x - halfWidth(d)))
-  const maxX = Math.max(...descendants.map((d) => d.x + halfWidth(d)))
+  const minX = Math.min(...descendants.map((d) => d.x + personExtent(d.data.marriages).left))
+  const maxX = Math.max(...descendants.map((d) => d.x + personExtent(d.data.marriages).right))
   const maxY = Math.max(...descendants.map((d) => d.y))
 
   const maxAncestorDepth = Math.max(
