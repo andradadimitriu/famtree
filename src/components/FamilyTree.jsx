@@ -9,23 +9,31 @@ import PersonPanel from './PersonPanel'
 import './FamilyTree.css'
 
 const NODE_WIDTH = 190
-const NODE_HEIGHT = 110
+// Grown by the same amount CARD_HEIGHT was (see below), so the gap
+// between one generation's card bottoms and the next row stays the
+// 38px it always was.
+const NODE_HEIGHT = 174
 const CARD_WIDTH = 150
-// Tall enough to give the inline "collapse parents" toggle its own
-// reserved strip above the name, rather than overlapping it.
-const CARD_HEIGHT = 72
+// Tall enough for, top to bottom: the "collapse parents" toggle's own
+// reserved strip, the profile-photo rectangle, the name, and the born
+// year — see specs/profile-photo/spec.md.
+const CARD_HEIGHT = 136
 const PARENT_TOGGLE_SLOT = 22
 
-// A small avatar badge in the card's top-left corner — see
-// specs/profile-photo/spec.md. Left, not top-center, so it never
-// overlaps the parent-row/ancestor toggle badges, which both sit
-// top-center (translate(0, ...)); a long centered name's leftmost
-// glyphs can still graze it — accepted rough edge, same spirit as
-// `unionSide`'s own doc comment below.
-const AVATAR_RADIUS = 11
-const AVATAR_INSET = 5
-const AVATAR_CX = -CARD_WIDTH / 2 + AVATAR_RADIUS + AVATAR_INSET
-const AVATAR_CY = -CARD_HEIGHT / 2 + AVATAR_RADIUS + AVATAR_INSET
+// Profile photo renders as a rectangle above the name (not a circular
+// badge) — right below the parent-row/ancestor toggle's reserved strip,
+// so it never collides with those top-center badges. A card with no
+// profile photo still reserves this space (nothing drawn there) rather
+// than shrinking — d3.tree's nodeSize is fixed per node, so every card
+// in a row is the same height regardless of which ones have a photo.
+// Accepted rough edge, same spirit as `unionSide`'s own doc comment
+// below.
+const PHOTO_WIDTH = CARD_WIDTH - 16
+const PHOTO_HEIGHT = 56
+const PHOTO_X = -PHOTO_WIDTH / 2
+const PHOTO_Y = -CARD_HEIGHT / 2 + PARENT_TOGGLE_SLOT + 2
+const NAME_Y = PHOTO_Y + PHOTO_HEIGHT + 14
+const META_Y = NAME_Y + 18
 
 // Married nodes render extra cards (one per spouse) joined to the person
 // by a marriage node, so they need more horizontal room than a single card.
@@ -218,18 +226,25 @@ function PersonAvatar({ url }) {
   return (
     <g className="node__avatar">
       <clipPath id={clipId}>
-        <circle cx={AVATAR_CX} cy={AVATAR_CY} r={AVATAR_RADIUS} />
+        <rect x={PHOTO_X} y={PHOTO_Y} width={PHOTO_WIDTH} height={PHOTO_HEIGHT} rx={4} />
       </clipPath>
       <image
         href={url}
-        x={AVATAR_CX - AVATAR_RADIUS}
-        y={AVATAR_CY - AVATAR_RADIUS}
-        width={AVATAR_RADIUS * 2}
-        height={AVATAR_RADIUS * 2}
+        x={PHOTO_X}
+        y={PHOTO_Y}
+        width={PHOTO_WIDTH}
+        height={PHOTO_HEIGHT}
         preserveAspectRatio="xMidYMid slice"
         clipPath={`url(#${clipId})`}
       />
-      <circle className="node__avatar-outline" cx={AVATAR_CX} cy={AVATAR_CY} r={AVATAR_RADIUS} />
+      <rect
+        className="node__avatar-outline"
+        x={PHOTO_X}
+        y={PHOTO_Y}
+        width={PHOTO_WIDTH}
+        height={PHOTO_HEIGHT}
+        rx={4}
+      />
     </g>
   )
 }
@@ -251,14 +266,14 @@ function PersonCard({ person, x, y = 0, isSpouse, isAncestor, onSelectPerson }) 
       <PersonAvatar url={person.profilePhotoUrl} />
       <text
         className="node__name node__name--clickable"
-        y={-6}
+        y={NAME_Y}
         textAnchor="middle"
         onClick={() => onSelectPerson(person.id)}
       >
         {person.name}
       </text>
       {person.born && (
-        <text className="node__meta" y={14} textAnchor="middle">
+        <text className="node__meta" y={META_Y} textAnchor="middle">
           b. {formatPartialDate(person.born)}
         </text>
       )}
@@ -281,7 +296,7 @@ function UnknownPersonCard({ x, y = 0 }) {
         height={CARD_HEIGHT}
         rx={8}
       />
-      <text className="node__name node__name--unknown" y={-6} textAnchor="middle">
+      <text className="node__name node__name--unknown" y={NAME_Y} textAnchor="middle">
         Unknown
       </text>
     </g>
