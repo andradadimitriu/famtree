@@ -119,10 +119,6 @@
   stroke-width: 1.5;
 }
 
-.node__union--interactive {
-  cursor: pointer;
-}
-
 .node__name {
   font: 600 13px system-ui, 'Segoe UI', sans-serif;
   fill: var(--color-text);
@@ -157,6 +153,14 @@
   fill: var(--color-marriage);
   stroke: var(--color-accent);
   stroke-width: 1.5;
+}
+
+.node__marriage--interactive {
+  cursor: pointer;
+}
+
+.node__marriage--interactive:hover {
+  fill: var(--color-accent);
 }
 
 .node__person--spouse .node__card {

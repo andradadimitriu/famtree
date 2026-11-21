@@ -59,6 +59,19 @@ const COUSIN_GAP = NODE_WIDTH * 2 - CARD_WIDTH
 // size the SVG tall enough that the bottom row's toggle isn't clipped.
 const UNION_TOGGLE_OFFSET = 14
 const UNION_TOGGLE_RADIUS = 9
+
+// The marriage dot is split into a left half and a right half (see
+// `halfCirclePath`), each independently clickable, so either side of a
+// relationship can be hidden without touching the other.
+const MARRIAGE_DOT_RADIUS = 9
+
+// An SVG path for one half of a circle, split along its vertical
+// diameter — `rightHalf` picks which side. Used for the marriage dot so
+// its left and right halves can carry their own click handlers.
+function halfCirclePath(cx, cy, r, rightHalf) {
+  const sweep = rightHalf ? 1 : 0
+  return `M ${cx} ${cy - r} A ${r} ${r} 0 0 ${sweep} ${cx} ${cy + r} Z`
+}
 const BOTTOM_MARGIN = CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET + UNION_TOGGLE_RADIUS
 
 // Vertical gap between stacked trees — the main one and, below it, one
@@ -80,15 +93,22 @@ const TREE_GAP = NODE_HEIGHT
 // so it reads as attached to the spouse's card, not this person's. Like
 // `unionSide`'s own doc comment, 3+ unions stacked this way will visually
 // crowd — an acceptable simplification for this sample app.
-function collectUnions(marriages, selfX = 0, side = 0) {
+//
+// `parentMarriage` is the marriage whose spouse sits on this union's near
+// side (null for a top-level union, where the near side is the person
+// themselves rather than another marriage) — the marriage dot's "hide
+// whatever's on that side" half-click needs it to know which marriage's
+// spouse to toggle when the near side is clicked, as opposed to this
+// union's own spouse on the far side.
+function collectUnions(marriages, selfX = 0, side = 0, parentMarriage = null) {
   const unions = []
   ;(marriages ?? []).forEach((marriage, i) => {
     const unionSideI = side || unionSide(i)
     const cardX = side ? selfX + unionSideI * STEP * (i + 1) : spouseCenterX(i)
     const connX = cardX - unionSideI * (CARD_WIDTH / 2 + MARRIAGE_GAP / 2)
-    unions.push({ marriage, originX: selfX, cardX, connX, side: unionSideI })
+    unions.push({ marriage, originX: selfX, cardX, connX, side: unionSideI, parentMarriage })
     if (marriage.spouse?.marriages?.length) {
-      unions.push(...collectUnions(marriage.spouse.marriages, cardX, unionSideI))
+      unions.push(...collectUnions(marriage.spouse.marriages, cardX, unionSideI, marriage))
     }
   })
   return unions
@@ -142,6 +162,27 @@ function personExtent(marriages) {
 function ancestorDepth(person) {
   if (!person.parents) return 0
   return 1 + Math.max(...person.parents.map(ancestorDepth))
+}
+
+// Horizontal counterpart to `ancestorDepth`: how far left/right an
+// *expanded* ancestor stack reaches, recursively, from the x of the card
+// it's attached to. Like `ancestorDepth`, nothing else accounts for this
+// — `personExtent` only knows about spouse cards, not the parent pairs
+// `AncestorStack` draws above any of them — so a person (or spouse) whose
+// ancestors are expanded near the edge of the tree can render past the
+// SVG's viewBox and be invisible rather than merely crowded. An
+// unrecorded second parent still costs `UnknownPersonCard`'s width, but
+// doesn't recurse further (there's no person there to have ancestors).
+function ancestorHorizontalExtent(person, x) {
+  const half = CARD_WIDTH / 2
+  if (!person.parents) return { left: x - half, right: x + half }
+  const positions = [x - STEP / 2, x + STEP / 2]
+  const leftExtent = ancestorHorizontalExtent(person.parents[0], positions[0])
+  const rightExtent =
+    person.parents.length === 2
+      ? ancestorHorizontalExtent(person.parents[1], positions[1])
+      : { left: positions[1] - half, right: positions[1] + half }
+  return { left: leftExtent.left, right: rightExtent.right }
 }
 
 // Collapse state lives per marriage (`marriage.children` vs
@@ -309,7 +350,7 @@ function UnknownPersonCard({ x, y = 0 }) {
 // layout `FamilyNode` sits in — it's a fixed local offset above whichever
 // card it's attached to, so (per specs/ancestors/spec.md) it can visually
 // overlap a neighboring node in a wide/deep tree. Accepted for now.
-function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
+function AncestorStack({ person, x, y, onToggle, onToggleParent, onSelectPerson }) {
   const hasAncestors = Boolean(person.parents || person._parents)
   if (!hasAncestors) return null
 
@@ -344,6 +385,15 @@ function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
           // pair rather than centering a lone card.
           const positions = [x - STEP / 2, x + STEP / 2]
 
+          // Each parent can be hidden independently via its own half of
+          // the dot below — tracked by id, same per-owner-instance mutate
+          // pattern as `_parents`/`_spouse` elsewhere. Only a *recorded*
+          // second parent is hideable; an unrecorded one renders as
+          // `UnknownPersonCard` regardless, same as an unrecorded spouse.
+          const hiddenIds = person._hiddenParentIds
+          const leftHidden = Boolean(hiddenIds?.has(parents[0].id))
+          const rightHidden = parents.length === 2 && Boolean(hiddenIds?.has(parents[1].id))
+
           return (
             <>
               <line
@@ -353,47 +403,73 @@ function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
                 y1={parentY}
                 y2={cardTopY}
               />
-              <line
-                className="node__marriage-line"
-                x1={positions[0] + CARD_WIDTH / 2}
-                x2={positions[1] - CARD_WIDTH / 2}
-                y1={parentY}
-                y2={parentY}
+              {!leftHidden && (
+                <line
+                  className="node__marriage-line"
+                  x1={positions[0] + CARD_WIDTH / 2}
+                  x2={x}
+                  y1={parentY}
+                  y2={parentY}
+                />
+              )}
+              {!rightHidden && (
+                <line
+                  className="node__marriage-line"
+                  x1={x}
+                  x2={positions[1] - CARD_WIDTH / 2}
+                  y1={parentY}
+                  y2={parentY}
+                />
+              )}
+              <path
+                className="node__marriage node__marriage--left node__marriage--interactive"
+                d={halfCirclePath(x, parentY, MARRIAGE_DOT_RADIUS, false)}
+                onClick={() => onToggleParent(person, parents[0].id)}
               />
-              <circle className="node__marriage" cx={x} cy={parentY} r={5} />
-              <g>
-                <PersonCard
-                  person={parents[0]}
-                  x={positions[0]}
-                  y={parentY}
-                  isAncestor
-                  onSelectPerson={onSelectPerson}
-                />
-                <AncestorStack
-                  person={parents[0]}
-                  x={positions[0]}
-                  y={parentY}
-                  onToggle={onToggle}
-                  onSelectPerson={onSelectPerson}
-                />
-              </g>
-              {parents.length === 2 ? (
+              <path
+                className={`node__marriage node__marriage--right${parents.length === 2 ? ' node__marriage--interactive' : ''}`}
+                d={halfCirclePath(x, parentY, MARRIAGE_DOT_RADIUS, true)}
+                onClick={parents.length === 2 ? () => onToggleParent(person, parents[1].id) : undefined}
+              />
+              {!leftHidden && (
                 <g>
                   <PersonCard
-                    person={parents[1]}
-                    x={positions[1]}
+                    person={parents[0]}
+                    x={positions[0]}
                     y={parentY}
                     isAncestor
                     onSelectPerson={onSelectPerson}
                   />
                   <AncestorStack
-                    person={parents[1]}
-                    x={positions[1]}
+                    person={parents[0]}
+                    x={positions[0]}
                     y={parentY}
                     onToggle={onToggle}
+                    onToggleParent={onToggleParent}
                     onSelectPerson={onSelectPerson}
                   />
                 </g>
+              )}
+              {parents.length === 2 ? (
+                !rightHidden && (
+                  <g>
+                    <PersonCard
+                      person={parents[1]}
+                      x={positions[1]}
+                      y={parentY}
+                      isAncestor
+                      onSelectPerson={onSelectPerson}
+                    />
+                    <AncestorStack
+                      person={parents[1]}
+                      x={positions[1]}
+                      y={parentY}
+                      onToggle={onToggle}
+                      onToggleParent={onToggleParent}
+                      onSelectPerson={onSelectPerson}
+                    />
+                  </g>
+                )
               ) : (
                 <UnknownPersonCard x={positions[1]} y={parentY} />
               )}
@@ -411,7 +487,10 @@ function AncestorStack({ person, x, y, onToggle, onSelectPerson }) {
 function FamilyNode({
   node,
   onToggleMarriage,
+  onToggleSpouse,
+  onToggleSelf,
   onToggleAncestors,
+  onToggleParent,
   onToggleParentRow,
   onSelectPerson,
 }) {
@@ -420,6 +499,10 @@ function FamilyNode({
   // (e.g. David's earlier marriage, shown hanging off his card even though
   // *this* node is Margaret) — see `collectUnions`'s comment.
   const unions = collectUnions(data.marriages)
+  // Hidden via a top-level union's near-side half-click (`onToggleSelf`) —
+  // the card disappears but the union/dot, spouse, and children all stay,
+  // same spirit as hiding a spouse via the far side.
+  const selfHidden = Boolean(data._hiddenSelf)
 
   // Ordinary tree members (reached walking down from the root) have their
   // parents rendered as the real hierarchy row above them, rather than
@@ -438,37 +521,85 @@ function FamilyNode({
 
   return (
     <g className="node" transform={`translate(${x}, ${y})`}>
-      {unions.map(({ marriage, originX, cardX, connX, side }, i) => {
+      {unions.map(({ marriage, originX, cardX, connX, side, parentMarriage }, i) => {
         const hasChildren = Boolean(marriage.children || marriage._children)
         const isCollapsed = Boolean(marriage._children)
+        // A real spouse, shown or currently hidden via the pink dot below
+        // (`marriage._spouse`) — distinct from a marriage that never had
+        // one recorded (the "Unknown" placeholder case), which has
+        // neither `spouse` nor `_spouse` and so isn't toggleable here.
+        const hasSpouse = Boolean(marriage.spouse || marriage._spouse)
         // A marriage with no recorded spouse but recorded children still
         // gets the couple's connector/placeholder treatment (see
         // UnknownPersonCard) — only a childless unrecorded-spouse marriage
         // renders as if it were just the one person, with nothing to connect.
-        const showUnion = Boolean(marriage.spouse) || hasChildren
+        const showUnion = hasSpouse || hasChildren
+        // The line is two segments split at the dot — this person's card
+        // out to the dot (always drawn while showUnion), and the dot on
+        // out to whatever's on the far side. That second segment is
+        // skipped while the spouse is hidden (`_spouse`), since there's
+        // nothing out there to connect to anymore; it's still drawn for
+        // a genuinely unrecorded spouse (UnknownPersonCard still renders
+        // there) or a visible one.
+        const showFarSegment = showUnion && !marriage._spouse
+        // Mirrors `showFarSegment` for the near side — skipped once the
+        // near-side entity (this person, for a top-level union) is
+        // hidden. A nested union's near side is a previous spouse, who by
+        // construction (see `collectUnions`) is never hidden while this
+        // union still exists, so it's always shown there.
+        const showNearSegment = showUnion && (parentMarriage ? true : !selfHidden)
+
+        // The dot's far half (toward `cardX`) always hides/reveals this
+        // union's own spouse. Its near half (toward `originX`) hides
+        // whatever produced that side instead — for a nested union
+        // that's `parentMarriage`'s spouse; for a top-level union it's
+        // the person themselves (`onToggleSelf`).
+        const farAction = hasSpouse ? () => onToggleSpouse(marriage) : undefined
+        const nearAction = parentMarriage
+          ? () => onToggleSpouse(parentMarriage)
+          : () => onToggleSelf(data)
+        const rightAction = side === 1 ? farAction : nearAction
+        const leftAction = side === 1 ? nearAction : farAction
 
         return (
-          <g
-            key={marriage.id ?? i}
-            className={`node__union${hasChildren ? ' node__union--interactive' : ''}`}
-            onClick={hasChildren ? () => onToggleMarriage(marriage) : undefined}
-          >
+          <g key={marriage.id ?? i} className="node__union">
             {showUnion && (
-              <line
-                className="node__marriage-line"
-                x1={originX + side * (CARD_WIDTH / 2)}
-                x2={cardX - side * (CARD_WIDTH / 2)}
-                y1={0}
-                y2={0}
-              />
-            )}
-            {showUnion && (
-              <circle className="node__marriage" cx={connX} cy={0} r={5} />
+              <g>
+                {showNearSegment && (
+                  <line
+                    className="node__marriage-line"
+                    x1={originX + side * (CARD_WIDTH / 2)}
+                    x2={connX}
+                    y1={0}
+                    y2={0}
+                  />
+                )}
+                {showFarSegment && (
+                  <line
+                    className="node__marriage-line"
+                    x1={connX}
+                    x2={cardX - side * (CARD_WIDTH / 2)}
+                    y1={0}
+                    y2={0}
+                  />
+                )}
+                <path
+                  className={`node__marriage node__marriage--right${rightAction ? ' node__marriage--interactive' : ''}`}
+                  d={halfCirclePath(connX, 0, MARRIAGE_DOT_RADIUS, true)}
+                  onClick={rightAction}
+                />
+                <path
+                  className={`node__marriage node__marriage--left${leftAction ? ' node__marriage--interactive' : ''}`}
+                  d={halfCirclePath(connX, 0, MARRIAGE_DOT_RADIUS, false)}
+                  onClick={leftAction}
+                />
+              </g>
             )}
             {hasChildren && (
               <g
-                className="node__toggle"
+                className="node__toggle node__toggle--interactive"
                 transform={`translate(${connX}, ${CARD_HEIGHT / 2 + UNION_TOGGLE_OFFSET})`}
+                onClick={() => onToggleMarriage(marriage)}
               >
                 <circle r={UNION_TOGGLE_RADIUS} />
                 <text textAnchor="middle" dy={4}>
@@ -479,26 +610,31 @@ function FamilyNode({
           </g>
         )
       })}
-      <PersonCard person={data} x={0} onSelectPerson={onSelectPerson} />
-      {showParentRowToggle && (
-        <g
-          className="node__toggle node__toggle--interactive node__toggle--inline"
-          transform={`translate(0, ${-CARD_HEIGHT / 2 + PARENT_TOGGLE_SLOT / 2})`}
-          onClick={() => onToggleParentRow(node)}
-        >
-          <circle r={7} />
-          <text textAnchor="middle" dy={3}>
-            {parentRowHidden ? '+' : '–'}
-          </text>
-        </g>
+      {!selfHidden && (
+        <>
+          <PersonCard person={data} x={0} onSelectPerson={onSelectPerson} />
+          {showParentRowToggle && (
+            <g
+              className="node__toggle node__toggle--interactive node__toggle--inline"
+              transform={`translate(0, ${-CARD_HEIGHT / 2 + PARENT_TOGGLE_SLOT / 2})`}
+              onClick={() => onToggleParentRow(node)}
+            >
+              <circle r={7} />
+              <text textAnchor="middle" dy={3}>
+                {parentRowHidden ? '+' : '–'}
+              </text>
+            </g>
+          )}
+          <AncestorStack
+            person={data}
+            x={0}
+            y={0}
+            onToggle={onToggleAncestors}
+            onToggleParent={onToggleParent}
+            onSelectPerson={onSelectPerson}
+          />
+        </>
       )}
-      <AncestorStack
-        person={data}
-        x={0}
-        y={0}
-        onToggle={onToggleAncestors}
-        onSelectPerson={onSelectPerson}
-      />
       {unions.map(({ marriage, cardX }, i) => {
         if (marriage.spouse) {
           return (
@@ -514,11 +650,16 @@ function FamilyNode({
                 x={cardX}
                 y={0}
                 onToggle={onToggleAncestors}
+                onToggleParent={onToggleParent}
                 onSelectPerson={onSelectPerson}
               />
             </g>
           )
         }
+        // Hidden via the pink dot (`onToggleSpouse`), not unrecorded —
+        // render nothing rather than the "Unknown" placeholder, which
+        // would otherwise wrongly imply there was never a spouse here.
+        if (marriage._spouse) return null
         const hasChildren = Boolean(marriage.children || marriage._children)
         return hasChildren ? <UnknownPersonCard key={marriage.id ?? i} x={cardX} /> : null
       })}
@@ -542,8 +683,24 @@ function layoutOneTree(rootData) {
     })(root)
 
   const descendants = root.descendants()
-  const minX = Math.min(...descendants.map((d) => d.x + personExtent(d.data.marriages).left))
-  const maxX = Math.max(...descendants.map((d) => d.x + personExtent(d.data.marriages).right))
+  // Each node's own expanded ancestor stack, plus one per visible spouse
+  // (spouses can have their own expanded ancestors too) — see
+  // `ancestorHorizontalExtent`'s comment for why `personExtent` alone
+  // isn't enough.
+  const ancestorExtents = descendants.flatMap((d) => [
+    ancestorHorizontalExtent(d.data, d.x),
+    ...collectUnions(d.data.marriages)
+      .filter((u) => u.marriage.spouse)
+      .map((u) => ancestorHorizontalExtent(u.marriage.spouse, d.x + u.cardX)),
+  ])
+  const minX = Math.min(
+    ...descendants.map((d) => d.x + personExtent(d.data.marriages).left),
+    ...ancestorExtents.map((e) => e.left),
+  )
+  const maxX = Math.max(
+    ...descendants.map((d) => d.x + personExtent(d.data.marriages).right),
+    ...ancestorExtents.map((e) => e.right),
+  )
   const maxY = Math.max(...descendants.map((d) => d.y))
 
   const maxAncestorDepth = Math.max(
@@ -638,8 +795,75 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     setVersion((v) => v + 1)
   }
 
+  // Hides/reveals a spouse's own card (and their ancestor stack/nested
+  // marriages) by clicking the pink marriage dot — same mutate-then-
+  // bump-version pattern as every other collapse toggle here. Doesn't
+  // touch `marriage.children`: kids of this couple stay in the tree
+  // either way, since `collectUnions`/`childrenAccessor` read them off
+  // the marriage record itself, not off `marriage.spouse`.
+  const handleToggleSpouse = (marriage) => {
+    if (marriage.spouse) {
+      marriage._spouse = marriage.spouse
+      marriage.spouse = undefined
+    } else if (marriage._spouse) {
+      marriage.spouse = marriage._spouse
+      marriage._spouse = undefined
+    } else {
+      return
+    }
+    setVersion((v) => v + 1)
+  }
+
+  // Hides/reveals a tree member's own card via a top-level union's near
+  // side (the far side of that same union is `handleToggleSpouse`) — the
+  // union and children stay, only this person's card (and their own
+  // ancestor stack/parent-row toggle) disappears.
+  //
+  // A spouse's only link into the visible tree *is* this person, so
+  // hiding self cascades to every currently-shown spouse too (same
+  // `marriage.spouse`/`_spouse` swap `handleToggleSpouse` uses — nested
+  // unions hanging off that spouse's own card fold away with it for
+  // free, via `collectUnions`'s recursion guard). Which marriages got
+  // cascade-hidden is remembered on `_autoHiddenMarriages` so un-hiding
+  // self only restores those, not a spouse the user had separately
+  // hidden beforehand.
+  const handleToggleSelf = (person) => {
+    if (!person._hiddenSelf) {
+      const autoHidden = []
+      ;(person.marriages ?? []).forEach((marriage) => {
+        if (marriage.spouse) {
+          marriage._spouse = marriage.spouse
+          marriage.spouse = undefined
+          autoHidden.push(marriage)
+        }
+      })
+      person._hiddenSelf = true
+      person._autoHiddenMarriages = autoHidden
+    } else {
+      ;(person._autoHiddenMarriages ?? []).forEach((marriage) => {
+        if (marriage._spouse) {
+          marriage.spouse = marriage._spouse
+          marriage._spouse = undefined
+        }
+      })
+      person._hiddenSelf = false
+      person._autoHiddenMarriages = undefined
+    }
+    setVersion((v) => v + 1)
+  }
+
+  // A field edit (bio, photo, ...) can land on someone who isn't in the
+  // main tree at all — a disconnected island, or a fully isolated person
+  // rendered as a flat-row `PersonCard` (see `buildDisconnectedGroups`) —
+  // so every one of those has to be patched too, not just
+  // `rootDataRef.current`. `isolatedPeople` is a flat array of plain
+  // `{ id, ...fields }` objects rather than a tree, so it's patched
+  // directly instead of via `patchPersonInTree`.
   const handlePersonUpdated = (personId, updates) => {
     patchPersonInTree(rootDataRef.current, personId, updates)
+    disconnectedRef.current?.islandTrees.forEach((tree) => patchPersonInTree(tree, personId, updates))
+    const isolatedPerson = disconnectedRef.current?.isolatedPeople.find((p) => p.id === personId)
+    if (isolatedPerson) Object.assign(isolatedPerson, updates)
     setVersion((v) => v + 1)
   }
 
@@ -698,6 +922,17 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
     } else {
       return
     }
+    setVersion((v) => v + 1)
+  }
+
+  // Hides/reveals one parent out of an expanded ancestor pair — same
+  // mutate-then-bump-version pattern as `handleToggleSpouse`, but keyed
+  // by id in a per-owner set rather than a single backup field, since a
+  // pair has two independently toggleable slots instead of one.
+  const handleToggleParent = (person, parentId) => {
+    const hidden = (person._hiddenParentIds ??= new Set())
+    if (hidden.has(parentId)) hidden.delete(parentId)
+    else hidden.add(parentId)
     setVersion((v) => v + 1)
   }
 
@@ -811,7 +1046,10 @@ export default function FamilyTree({ people, marriages, parentage, rootId, peopl
                   key={`${node.x},${node.y},${node.data.name}`}
                   node={node}
                   onToggleMarriage={handleToggleMarriage}
+                  onToggleSpouse={handleToggleSpouse}
+                  onToggleSelf={handleToggleSelf}
                   onToggleAncestors={handleToggleAncestors}
+                  onToggleParent={handleToggleParent}
                   onToggleParentRow={handleToggleParentRow}
                   onSelectPerson={setSelectedPersonId}
                 />
